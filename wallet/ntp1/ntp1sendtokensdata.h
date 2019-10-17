@@ -1,10 +1,11 @@
 #ifndef NTP1SENDTOKENSDATA_H
 #define NTP1SENDTOKENSDATA_H
 
-#include "ntp1/ntp1wallet.h"
 #include "ntp1sendtokensonerecipientdata.h"
 #include <deque>
 #include <string>
+
+class NTP1Wallet;
 
 /**
  * This class is used for a systematic construction of NTP1 transactions. Follow the steps:

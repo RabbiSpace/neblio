@@ -2,6 +2,7 @@
 
 // the following is a necessary include for pwalletMain and CWalletTx objects
 #include "init.h"
+#include "main.h"
 
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string.hpp>
@@ -106,7 +107,7 @@ void NTP1Wallet::__getOutputs()
 
         // NTP1 transactions strictly contain OP_RETURN in one of their vouts
         std::string opReturnArg;
-        if (!IsTxNTP1(&neblTx, &opReturnArg)) {
+        if (!NTP1Transaction::IsTxNTP1(&neblTx, &opReturnArg)) {
             continue;
         }
 
@@ -117,7 +118,7 @@ void NTP1Wallet::__getOutputs()
         NTP1Transaction ntp1tx;
         try {
             std::vector<std::pair<CTransaction, NTP1Transaction>> prevTxs =
-                GetAllNTP1InputsOfTx(neblTx, true);
+                NTP1Transaction::GetAllNTP1InputsOfTx(neblTx, true);
             ntp1tx.readNTP1DataFromTx(neblTx, prevTxs);
         } catch (std::exception& ex) {
             printf("Unable to download transaction information. Error says: %s\n", ex.what());
@@ -139,7 +140,7 @@ void NTP1Wallet::__getOutputs()
                     uint256      issueTxid = tokenTx.getIssueTxId();
                     CTransaction issueTx   = FetchTxFromDisk(issueTxid);
                     std::vector<std::pair<CTransaction, NTP1Transaction>> issueTxInputs =
-                        GetAllNTP1InputsOfTx(issueTx, true);
+                        NTP1Transaction::GetAllNTP1InputsOfTx(issueTx, true);
                     NTP1Transaction issueNTP1Tx;
                     issueNTP1Tx.readNTP1DataFromTx(issueTx, issueTxInputs);
 
@@ -217,7 +218,7 @@ void NTP1Wallet::__RecalculateTokensBalances()
 }
 
 void NTP1Wallet::AddOutputToWalletBalance(const NTP1Transaction& tx, int outputIndex,
-                                          std::map<string, NTP1Int>& balancesTable)
+                                          std::map<std::string, NTP1Int>& balancesTable)
 {
     for (long j = 0; j < static_cast<long>(tx.getTxOut(outputIndex).tokenCount()); j++) {
         NTP1TokenTxData    tokenTx = tx.getTxOut(outputIndex).getToken(j);
@@ -303,7 +304,7 @@ std::string NTP1Wallet::getTokenName(const std::string& tokenID) const
     }
 }
 
-NTP1Int NTP1Wallet::getTokenBalance(const string& tokenID) const
+NTP1Int NTP1Wallet::getTokenBalance(const std::string& tokenID) const
 {
     std::map<std::string, NTP1Int>::const_iterator it = balances.find(tokenID);
     if (it == balances.end()) {
@@ -313,7 +314,7 @@ NTP1Int NTP1Wallet::getTokenBalance(const string& tokenID) const
     }
 }
 
-string NTP1Wallet::getTokenName(int index) const
+std::string NTP1Wallet::getTokenName(int index) const
 {
     std::map<std::string, NTP1Int>::const_iterator it = balances.begin();
     std::advance(it, index);
@@ -326,7 +327,7 @@ string NTP1Wallet::getTokenName(int index) const
     }
 }
 
-string NTP1Wallet::getTokenId(int index) const
+std::string NTP1Wallet::getTokenId(int index) const
 {
     std::map<std::string, NTP1Int>::const_iterator it = balances.begin();
     std::advance(it, index);
@@ -339,7 +340,7 @@ string NTP1Wallet::getTokenId(int index) const
     }
 }
 
-string NTP1Wallet::getTokenIssuanceTxid(int index) const
+std::string NTP1Wallet::getTokenIssuanceTxid(int index) const
 {
     std::map<std::string, NTP1Int>::const_iterator it = balances.begin();
     std::advance(it, index);
@@ -352,7 +353,7 @@ string NTP1Wallet::getTokenIssuanceTxid(int index) const
     }
 }
 
-string NTP1Wallet::getTokenDescription(int index) const
+std::string NTP1Wallet::getTokenDescription(int index) const
 {
     std::map<std::string, NTP1Int>::const_iterator it = balances.begin();
     std::advance(it, index);
@@ -395,7 +396,7 @@ void NTP1Wallet::__asyncDownloadAndSetIcon(std::string IconURL, std::string toke
     wallet->tokenIcons.set(tokenId, __downloadIcon(IconURL));
 }
 
-string NTP1Wallet::getTokenIcon(int index)
+std::string NTP1Wallet::getTokenIcon(int index)
 {
     std::map<std::string, NTP1Int>::const_iterator it = balances.begin();
     std::advance(it, index);
@@ -435,7 +436,7 @@ string NTP1Wallet::getTokenIcon(int index)
 
 int64_t NTP1Wallet::getNumberOfTokens() const { return balances.size(); }
 
-const std::map<string, NTP1Int>& NTP1Wallet::getBalancesMap() const { return balances; }
+const std::map<std::string, NTP1Int>& NTP1Wallet::getBalancesMap() const { return balances; }
 
 const std::unordered_map<NTP1OutPoint, NTP1Transaction>& NTP1Wallet::getWalletOutputsWithTokens()
 {
@@ -444,7 +445,7 @@ const std::unordered_map<NTP1OutPoint, NTP1Transaction>& NTP1Wallet::getWalletOu
 
 bool NTP1Wallet::hasEverSucceeded() const { return everSucceededInLoadingTokens; }
 
-bool NTP1Wallet::IconHasErrorContent(const string& icon) { return icon == ICON_ERROR_CONTENT; }
+bool NTP1Wallet::IconHasErrorContent(const std::string& icon) { return icon == ICON_ERROR_CONTENT; }
 
 void NTP1Wallet::clear()
 {
@@ -462,7 +463,7 @@ void NTP1Wallet::setMinMaxConfirmations(int minConfs, int maxConfs)
     maxConfirmations = maxConfs;
 }
 
-string NTP1Wallet::Serialize(const NTP1Wallet& wallet)
+std::string NTP1Wallet::Serialize(const NTP1Wallet& wallet)
 {
     json_spirit::Object root;
 
@@ -476,7 +477,7 @@ string NTP1Wallet::Serialize(const NTP1Wallet& wallet)
     return json_spirit::write_formatted(root);
 }
 
-NTP1Wallet NTP1Wallet::Deserialize(const string& data)
+NTP1Wallet NTP1Wallet::Deserialize(const std::string& data)
 {
     NTP1Wallet result;
 
@@ -515,7 +516,7 @@ void NTP1Wallet::importFromFile(const boost::filesystem::path& filePath)
     *this = Deserialize(data);
 }
 
-string NTP1Wallet::__KeyToString(const string& str, bool serialize)
+std::string NTP1Wallet::__KeyToString(const std::string& str, bool serialize)
 {
     if (serialize) {
         std::string res;
@@ -526,7 +527,7 @@ string NTP1Wallet::__KeyToString(const string& str, bool serialize)
     }
 }
 
-void NTP1Wallet::__KeyFromString(const string& str, bool deserialize, std::string& result)
+void NTP1Wallet::__KeyFromString(const std::string& str, bool deserialize, std::string& result)
 {
     if (deserialize) {
         result.clear();
@@ -536,14 +537,15 @@ void NTP1Wallet::__KeyFromString(const string& str, bool deserialize, std::strin
     }
 }
 
-string NTP1Wallet::__KeyToString(const NTP1OutPoint& op, bool)
+std::string NTP1Wallet::__KeyToString(const NTP1OutPoint& op, bool)
 {
     return op.getHash().ToString() + ":" + ToString(op.getIndex());
 }
 
-void NTP1Wallet::__KeyFromString(const string& outputString, bool /*deserialize*/, NTP1OutPoint& result)
+void NTP1Wallet::__KeyFromString(const std::string& outputString, bool /*deserialize*/,
+                                 NTP1OutPoint&      result)
 {
-    vector<string> strs;
+    std::vector<std::string> strs;
     boost::split(strs, outputString, boost::is_any_of(":"));
     if (strs.size() != 2) {
         throw std::runtime_error("The output string is of invalid format. The string given is: \"" +
@@ -578,7 +580,7 @@ void NTP1Wallet::__ValFromJson(const json_spirit::Value& input, bool /*deseriali
     result.importDatabaseJsonData(input);
 }
 
-json_spirit::Value NTP1Wallet::__ValToJson(const string& input, bool serialize)
+json_spirit::Value NTP1Wallet::__ValToJson(const std::string& input, bool serialize)
 {
     if (serialize) {
         std::string res;
@@ -589,7 +591,7 @@ json_spirit::Value NTP1Wallet::__ValToJson(const string& input, bool serialize)
     }
 }
 
-void NTP1Wallet::__ValFromJson(const json_spirit::Value& input, bool deserialize, string& result)
+void NTP1Wallet::__ValFromJson(const json_spirit::Value& input, bool deserialize, std::string& result)
 {
     if (deserialize) {
         result.clear();

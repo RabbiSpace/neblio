@@ -565,6 +565,21 @@ add_library(core_lib STATIC
     wallet/ThreadSafeMap.cpp
     wallet/ThreadSafeHashMap.cpp
     wallet/NetworkForks.cpp
+    wallet/blockindexcatalog.cpp
+    wallet/blockindex.cpp
+    wallet/outpoint.cpp
+    wallet/inpoint.cpp
+    wallet/block.cpp
+    wallet/transaction.cpp
+    wallet/globals.cpp
+    wallet/diskblockindex.cpp
+    wallet/disktxpos.cpp
+    wallet/txindex.cpp
+    wallet/txin.cpp
+    wallet/txout.cpp
+    wallet/txmempool.cpp
+    wallet/merkletx.cpp
+    wallet/blocklocator.cpp
     )
 
 target_link_libraries(core_lib
@@ -636,6 +651,7 @@ endif()
 add_library(txdb_lib STATIC
     wallet/txdb-lmdb.cpp
     wallet/SerializationTester.cpp
+    wallet/diskblockindex.cpp
     )
 
 target_link_libraries(txdb_lib

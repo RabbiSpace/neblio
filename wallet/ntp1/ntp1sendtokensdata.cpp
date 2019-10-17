@@ -1,6 +1,7 @@
 #include "ntp1sendtokensdata.h"
 
 #include "init.h"
+#include "ntp1/ntp1wallet.h"
 #include "util.h"
 #include "wallet.h"
 #include "json/json_spirit.h"
