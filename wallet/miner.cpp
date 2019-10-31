@@ -138,7 +138,7 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake, int64_t* pFees)
         txNew.vout[0].scriptPubKey.SetDestination(pubkey.GetID());
     } else {
         // Height first in coinbase required for block.version=2
-        txNew.vin[0].scriptSig = (CScript() << pindexPrev->nHeight + 1) + COINBASE_FLAGS;
+        txNew.vin[0].scriptSig = (CScript() << pindexPrev->getHeight() + 1) + COINBASE_FLAGS;
         assert(txNew.vin[0].scriptSig.size() <= 100);
 
         txNew.vout[0].SetEmpty();
@@ -177,7 +177,7 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake, int64_t* pFees)
         ParseMoney(minTxFeeVal, nMinTxFee);
     }
 
-    pblock->nBits = GetNextTargetRequired(pindexPrev.get(), fProofOfStake);
+    pblock->nBits = GetNextTargetRequired(pindexPrev, fProofOfStake);
 
     // map of issued token names in this block vs token hashes
     // this is used to prevent duplicate token names
@@ -199,7 +199,7 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake, int64_t* pFees)
         for (map<uint256, CTransaction>::iterator mi = mempool.mapTx.begin(); mi != mempool.mapTx.end();
              ++mi) {
             CTransaction& tx = (*mi).second;
-            if (tx.IsCoinBase() || tx.IsCoinStake() || !IsFinalTx(tx, pindexPrev->nHeight + 1))
+            if (tx.IsCoinBase() || tx.IsCoinStake() || !IsFinalTx(tx, pindexPrev->getHeight() + 1))
                 continue;
 
             COrphan* porphan        = NULL;
@@ -445,7 +445,7 @@ void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& 
     ++nExtraNonce;
 
     unsigned int nHeight =
-        pindexPrev->nHeight + 1; // Height first in coinbase required for block.version=2
+        pindexPrev->getHeight() + 1; // Height first in coinbase required for block.version=2
     pblock->vtx[0].vin[0].scriptSig = (CScript() << nHeight << CBigNum(nExtraNonce)) + COINBASE_FLAGS;
     assert(pblock->vtx[0].vin[0].scriptSig.size() <= 100);
 

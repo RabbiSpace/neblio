@@ -58,7 +58,7 @@ void WalletTxToJSON(const CWalletTx& wtx, Object& entry)
     if (confirms > 0) {
         entry.push_back(Pair("blockhash", wtx.hashBlock.GetHex()));
         entry.push_back(Pair("blockindex", wtx.nIndex));
-        entry.push_back(Pair("blocktime", (int64_t)(mapBlockIndex[wtx.hashBlock]->nTime)));
+        entry.push_back(Pair("blocktime", (int64_t)(mapBlockIndex[wtx.hashBlock]->getHeader_NTime())));
     }
     entry.push_back(Pair("txid", wtx.GetHash().GetHex()));
     entry.push_back(Pair("time", (int64_t)wtx.GetTxTime()));
@@ -93,7 +93,8 @@ Value getinfo(const Array& params, bool fHelp)
     obj.push_back(Pair("stake", ValueFromAmount(pwalletMain->GetStake())));
     obj.push_back(Pair("blocks", (int)nBestHeight));
     obj.push_back(Pair("timeoffset", (int64_t)GetTimeOffset()));
-    obj.push_back(Pair("moneysupply", ValueFromAmount(boost::atomic_load(&pindexBest)->nMoneySupply)));
+    obj.push_back(
+        Pair("moneysupply", ValueFromAmount(boost::atomic_load(&pindexBest)->getMoneySupply())));
     obj.push_back(Pair("connections", (int)vNodes.size()));
     obj.push_back(Pair("proxy", (proxy.first.IsValid() ? proxy.first.ToStringIPPort() : string())));
     obj.push_back(Pair("ip", addrSeenByPeer.get().ToStringIP()));
@@ -1407,7 +1408,7 @@ Value listsinceblock(const Array& params, bool fHelp)
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter");
     }
 
-    int depth = pindex ? (1 + nBestHeight - pindex->nHeight) : -1;
+    int depth = pindex ? (1 + nBestHeight - pindex->getHeight()) : -1;
 
     Array transactions;
 
@@ -1424,11 +1425,11 @@ Value listsinceblock(const Array& params, bool fHelp)
     if (target_confirms == 1) {
         lastblock = hashBestChain;
     } else {
-        int target_height = boost::atomic_load(&pindexBest)->nHeight + 1 - target_confirms;
+        int target_height = boost::atomic_load(&pindexBest)->getHeight() + 1 - target_confirms;
 
         CBlockIndex* block;
-        for (block = pindexBest.get(); block && block->nHeight > target_height;
-             block = boost::atomic_load(&block->pprev).get()) {
+        for (block = pindexBest.get(); block && block->getHeight() > target_height;
+             block = block->getPrevBlockIndex().get()) {
         }
 
         lastblock = block ? block->GetBlockHash() : 0;
@@ -1490,7 +1491,7 @@ Value gettransaction(const Array& params, bool fHelp)
                 if (mi != mapBlockIndex.end() && (*mi).second) {
                     CBlockIndexSmartPtr pindex = boost::atomic_load(&mi->second);
                     if (pindex->IsInMainChain())
-                        entry.push_back(Pair("confirmations", 1 + nBestHeight - pindex->nHeight));
+                        entry.push_back(Pair("confirmations", 1 + nBestHeight - pindex->getHeight()));
                     else
                         entry.push_back(Pair("confirmations", 0));
                 }

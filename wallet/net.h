@@ -18,6 +18,7 @@
 #include "ThreadSafeHashMap.h"
 #include "addrman.h"
 #include "bloom.h"
+#include "globals.h"
 #include "hash.h"
 #include "mruset.h"
 #include "netbase.h"
@@ -228,7 +229,7 @@ public:
     std::map<uint256, CRequestTracker> mapRequests;
     CCriticalSection                   cs_mapRequests;
     uint256                            hashContinue;
-    CBlockIndex*                       pindexLastGetBlocksBegin;
+    CBlockIndexSmartPtr                pindexLastGetBlocksBegin;
     uint256                            hashLastGetBlocksEnd;
     int                                nStartingHeight;
 
@@ -621,7 +622,7 @@ public:
         PushMessage(pszCommand, hashReply, a1, a2);
     }
 
-    void PushGetBlocks(CBlockIndex* pindexBegin, uint256 hashEnd);
+    void PushGetBlocks(CBlockIndexSmartPtr pindexBegin, uint256 hashEnd);
     bool IsSubscribed(unsigned int nChannel);
     void Subscribe(unsigned int nChannel, unsigned int nHops = 0);
     void CancelSubscribe(unsigned int nChannel);

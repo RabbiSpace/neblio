@@ -1,9 +1,9 @@
 #include "transactionrecord.h"
 
 #include "base58.h"
-#include "wallet.h"
-#include "txmempool.h"
 #include "main.h"
+#include "txmempool.h"
+#include "wallet.h"
 
 /* Return positive answer if transaction should be shown in list.
  */
@@ -178,9 +178,9 @@ void TransactionRecord::updateStatus(const CWalletTx& wtx)
         pindex = boost::atomic_load(&mi->second).get();
 
     // Sort order, unrecorded transactions sort to the top
-    status.sortKey =
-        strprintf("%010d-%01d-%010u-%03d", (pindex ? pindex->nHeight : std::numeric_limits<int>::max()),
-                  (wtx.IsCoinBase() ? 1 : 0), wtx.nTimeReceived, idx);
+    status.sortKey          = strprintf("%010d-%01d-%010u-%03d",
+                               (pindex ? pindex->getHeight() : std::numeric_limits<int>::max()),
+                               (wtx.IsCoinBase() ? 1 : 0), wtx.nTimeReceived, idx);
     status.countsForBalance = wtx.IsTrusted() && !(wtx.GetBlocksToMaturity() > 0);
     status.depth            = wtx.GetDepthInMainChain();
     status.cur_num_blocks   = nBestHeight;

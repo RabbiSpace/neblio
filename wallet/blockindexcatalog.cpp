@@ -3,7 +3,7 @@
 #include <boost/make_shared.hpp>
 #include <utility>
 
-CBlockIndexSmartPtr BlockIndexCatalog::InsertBlockIndex(uint256 hash)
+CBlockIndexSmartPtr BlockIndexCatalog::insertBlockIndex_unsafe(uint256 hash)
 {
     if (hash == 0)
         return nullptr;
@@ -19,9 +19,26 @@ CBlockIndexSmartPtr BlockIndexCatalog::InsertBlockIndex(uint256 hash)
         throw std::runtime_error("LoadBlockIndex() : new CBlockIndex failed");
     mi = blockIndexMap.insert(std::make_pair(hash, pindexNew)).first;
 
-    pindexNew->phashBlock = &((*mi).first);
+    pindexNew->setBlockHashPtr(&((*mi).first));
 
     return pindexNew;
 }
 
 BlockIndexCatalog::BlockIndexCatalog() {}
+
+[[nodiscard]] boost::shared_ptr<boost::lock_guard<boost::recursive_mutex>>
+BlockIndexCatalog::get_lock() const
+{
+    return boost::make_shared<boost::lock_guard<boost::recursive_mutex>>(mtx);
+}
+
+[[nodiscard]] boost::shared_ptr<boost::unique_lock<boost::recursive_mutex>>
+BlockIndexCatalog::get_try_lock() const
+{
+    auto lock = boost::make_shared<boost::unique_lock<boost::recursive_mutex>>(mtx, boost::defer_lock);
+    if (mtx.try_lock()) {
+        return lock;
+    } else {
+        return nullptr;
+    }
+}

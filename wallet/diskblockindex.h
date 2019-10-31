@@ -23,25 +23,43 @@ public:
 
     explicit CDiskBlockIndex(CBlockIndex* pindex) : CBlockIndex(*pindex)
     {
-        hashPrev = (pprev ? pprev->GetBlockHash() : 0);
-        hashNext = (pnext ? pnext->GetBlockHash() : 0);
+        auto lg1 = lock_full();
+        auto lg2 = pindex->lock_full();
+
+        hashPrev = (contents.pprev ? contents.pprev->GetBlockHash() : 0);
+        hashNext = (contents.pnext ? contents.pnext->GetBlockHash() : 0);
     }
 
-    IMPLEMENT_SERIALIZE(
-        if (!(nType & SER_GETHASH)) READWRITE(nVersion);
-
-        READWRITE(hashNext); READWRITE(blockKeyInDB); READWRITE(nHeight); READWRITE(nMint);
-        READWRITE(nMoneySupply); READWRITE(nFlags); READWRITE(nStakeModifier); if (IsProofOfStake()) {
-            READWRITE(prevoutStake);
-            READWRITE(nStakeTime);
+    // clang-format off
+    IMPLEMENT_SERIALIZE (
+        auto lg = lock_full();
+        if (!(nType & SER_GETHASH)) { READWRITE(nVersion); }
+        READWRITE(hashNext);
+        READWRITE(contents.blockKeyInDB);
+        READWRITE(contents.nHeight);
+        READWRITE(contents.nMint);
+        READWRITE(contents.nMoneySupply);
+        READWRITE(contents.nFlags);
+        READWRITE(contents.nStakeModifier);
+        if (IsProofOfStake()) {
+            READWRITE(contents.prevoutStake);
+            READWRITE(contents.nStakeTime);
         } else if (fRead) {
-            const_cast<CDiskBlockIndex*>(this)->prevoutStake.SetNull();
-            const_cast<CDiskBlockIndex*>(this)->nStakeTime = 0;
-        } READWRITE(hashProof);
+            const_cast<CDiskBlockIndex*>(this)->contents.prevoutStake.SetNull();
+            const_cast<CDiskBlockIndex*>(this)->contents.nStakeTime = 0;
+        }
+        READWRITE(contents.hashProof);
 
         // block header
-        READWRITE(this->nVersion); READWRITE(hashPrev); READWRITE(hashMerkleRoot); READWRITE(nTime);
-        READWRITE(nBits); READWRITE(nNonce); READWRITE(blockHash);)
+        READWRITE(this->contents.nVersion);
+        READWRITE(hashPrev);
+        READWRITE(contents.hashMerkleRoot);
+        READWRITE(contents.nTime);
+        READWRITE(contents.nBits);
+        READWRITE(contents.nNonce);
+        READWRITE(blockHash);
+    )
+    // clang-format on
 
     void SetBlockHash(const uint256& hash) { blockHash = hash; }
 

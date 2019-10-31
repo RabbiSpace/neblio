@@ -169,14 +169,19 @@ bool ValidateSyncCheckpoint(uint256 hashCheckpoint)
     CBlockIndexSmartPtr pindexSyncCheckpoint = boost::atomic_load(&mapBlockIndex[hashSyncCheckpoint]);
     CBlockIndexSmartPtr pindexCheckpointRecv = boost::atomic_load(&mapBlockIndex[hashCheckpoint]);
 
-    if (pindexCheckpointRecv->nHeight <= pindexSyncCheckpoint->nHeight) {
+    auto lg1 = pindexCheckpointRecv->lock_full();
+    auto lg2 = pindexSyncCheckpoint->lock_full();
+
+    if (pindexCheckpointRecv->getHeight_unsafe() <= pindexSyncCheckpoint->getHeight_unsafe()) {
         // Received an older checkpoint, trace back from current checkpoint
         // to the same height of the received checkpoint to verify
-        // that current checkpoint should be a descendant block
+        // that current checkpoint should be a descendant blockllll
         CBlockIndexSmartPtr pindex = pindexSyncCheckpoint;
-        while (pindex->nHeight > pindexCheckpointRecv->nHeight)
-            if (!(pindex = pindex->pprev))
+        while (pindex->getHeight() > pindexCheckpointRecv->getHeight_unsafe()) {
+            if (!(pindex = pindex->getPrevBlockIndex())) {
                 return error("ValidateSyncCheckpoint: pprev null - block index structure failure");
+            }
+        }
         if (pindex->GetBlockHash() != hashCheckpoint) {
             hashInvalidCheckpoint = hashCheckpoint;
             return error("ValidateSyncCheckpoint: new sync-checkpoint %s is conflicting with current "
@@ -190,9 +195,11 @@ bool ValidateSyncCheckpoint(uint256 hashCheckpoint)
     // checkpoint. Trace back to the same height of current checkpoint
     // to verify.
     CBlockIndexSmartPtr pindex = pindexCheckpointRecv;
-    while (pindex->nHeight > pindexSyncCheckpoint->nHeight)
-        if (!(pindex = pindex->pprev))
+    while (pindex->getHeight() > pindexSyncCheckpoint->getHeight_unsafe()) {
+        if (!(pindex = pindex->getPrevBlockIndex())) {
             return error("ValidateSyncCheckpoint: pprev2 null - block index structure failure");
+        }
+    }
     if (pindex->GetBlockHash() != hashSyncCheckpoint) {
         hashInvalidCheckpoint = hashCheckpoint;
         return error("ValidateSyncCheckpoint: new sync-checkpoint %s is not a descendant of current "
@@ -261,17 +268,23 @@ bool AcceptPendingSyncCheckpoint()
     return false;
 }
 
+inline bool AutoSelectSyncCheckpoint_cond(const CBlockIndex* pindex)
+{
+    unsigned int nTS = TargetSpacing();
+    auto         lg  = pindex->lock_full();
+    return pindex->getPrevBlockIndex_unsafe() &&
+           (pindex->GetBlockTime_unsafe() + nCheckpointSpan * nTS >
+                boost::atomic_load(&pindexBest)->GetBlockTime() ||
+            pindex->getHeight_unsafe() + nCheckpointSpan > boost::atomic_load(&pindexBest)->getHeight());
+}
+
 // Automatically select a suitable sync-checkpoint
 uint256 AutoSelectSyncCheckpoint()
 {
     ConstCBlockIndexSmartPtr pindex = boost::atomic_load(&pindexBest);
     // Search backward for a block within max span and maturity window
-    unsigned int nTS = TargetSpacing();
-    while (pindex->pprev &&
-           (pindex->GetBlockTime() + nCheckpointSpan * nTS >
-                boost::atomic_load(&pindexBest)->GetBlockTime() ||
-            pindex->nHeight + nCheckpointSpan > boost::atomic_load(&pindexBest)->nHeight)) {
-        pindex = pindex->pprev;
+    while (AutoSelectSyncCheckpoint_cond(pindex.get())) {
+        pindex = pindex->getPrevBlockIndex();
     }
     return pindex->GetBlockHash();
 }
@@ -281,25 +294,26 @@ bool CheckSync(const uint256& hashBlock, const CBlockIndex* pindexPrev)
 {
     if (fTestNet)
         return true; // Testnet has no checkpoints
-    int nHeight = pindexPrev->nHeight + 1;
+    int nHeight = pindexPrev->getHeight() + 1;
 
     LOCK(cs_hashSyncCheckpoint);
     // sync-checkpoint should always be accepted block
     assert(mapBlockIndex.count(hashSyncCheckpoint));
-    const CBlockIndex* pindexSync = boost::atomic_load(&mapBlockIndex[hashSyncCheckpoint]).get();
+    const CBlockIndex* pindexSync = mapBlockIndex.at(hashSyncCheckpoint).get();
 
-    if (nHeight > pindexSync->nHeight) {
+    if (nHeight > pindexSync->getHeight()) {
         // trace back to same height as sync-checkpoint
         const CBlockIndex* pindex = pindexPrev;
-        while (pindex->nHeight > pindexSync->nHeight)
-            if (!(pindex = pindex->pprev.get()))
+        while (pindex->getHeight() > pindexSync->getHeight())
+            if (!(pindex = pindex->getPrevBlockIndex().get()))
                 return error("CheckSync: pprev null - block index structure failure");
-        if (pindex->nHeight < pindexSync->nHeight || pindex->GetBlockHash() != hashSyncCheckpoint)
+        if (pindex->getHeight() < pindexSync->getHeight() ||
+            pindex->GetBlockHash() != hashSyncCheckpoint)
             return false; // only descendant of sync-checkpoint can pass check
     }
-    if (nHeight == pindexSync->nHeight && hashBlock != hashSyncCheckpoint)
+    if (nHeight == pindexSync->getHeight() && hashBlock != hashSyncCheckpoint)
         return false; // same height with sync-checkpoint
-    if (nHeight < pindexSync->nHeight && !mapBlockIndex.count(hashBlock))
+    if (nHeight < pindexSync->getHeight() && !mapBlockIndex.count(hashBlock))
         return false; // lower height than sync-checkpoint
     return true;
 }
@@ -428,7 +442,7 @@ bool IsMatureSyncCheckpoint()
     int                nCbM       = CoinbaseMaturity();
     unsigned int       nSMA       = StakeMinAge();
     const CBlockIndex* pindexSync = boost::atomic_load(&mapBlockIndex[hashSyncCheckpoint]).get();
-    return (nBestHeight >= pindexSync->nHeight + nCbM ||
+    return (nBestHeight >= pindexSync->getHeight() + nCbM ||
             pindexSync->GetBlockTime() + nSMA < GetAdjustedTime());
 }
 
@@ -489,7 +503,7 @@ bool CSyncCheckpoint::ProcessSyncCheckpoint(CNode* pfrom)
                hashCheckpoint.ToString().c_str());
         // Ask this guy to fill in what we're missing
         if (pfrom) {
-            pfrom->PushGetBlocks(pindexBest.get(), hashCheckpoint);
+            pfrom->PushGetBlocks(pindexBest, hashCheckpoint);
             // ask directly as well in case rejected earlier by duplicate
             // proof-of-stake because getblocks may not get it this time
             pfrom->AskFor(CInv(MSG_BLOCK, mapOrphanBlocks.count(hashCheckpoint)

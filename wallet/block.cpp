@@ -145,8 +145,8 @@ bool CBlock::DisconnectBlock(CTxDB& txdb, CBlockIndexSmartPtr& pindex)
 
     // Update block index on disk without changing it in memory.
     // The memory index structure will be changed after the db commits.
-    if (pindex->pprev) {
-        CDiskBlockIndex blockindexPrev(boost::atomic_load(&pindex->pprev).get());
+    if (pindex->getPrevBlockIndex()) {
+        CDiskBlockIndex blockindexPrev(pindex->getPrevBlockIndex().get());
         blockindexPrev.hashNext = 0;
         if (!txdb.WriteBlockIndex(blockindexPrev))
             return error("DisconnectBlock() : WriteBlockIndex failed");
@@ -184,7 +184,7 @@ CBlock::CommonAncestorSuccessorBlocks CBlock::GetBlocksUpToCommonAncestorInMainC
             //            std::cout << "Block in fork chain: " << T->GetBlockHash().ToString() << "\t" <<
             //            T->nHeight
             //                      << std::endl;
-            T = boost::atomic_load(&T->pprev);
+            T = T->getPrevBlockIndex();
         }
         //        std::cout << "Traversing " << itBest->second->nHeight - itTarget->second->nHeight << "
         //        blocks" << std::endl;
@@ -204,7 +204,7 @@ CBlock::CommonAncestorSuccessorBlocks CBlock::GetBlocksUpToCommonAncestorInMainC
         res.inMainChain.insert(I->GetBlockHash());
         //        std::cout << "Block in main chain: " << I->GetBlockHash().ToString() << "\t" <<
         //        I->nHeight << std::endl;
-        I = boost::atomic_load(&I->pprev);
+        I = I->getPrevBlockIndex();
     }
     //    std::cout << "End block hashes" << std::endl << std::endl;
     return res;
@@ -527,7 +527,7 @@ bool CBlock::ConnectBlock(CTxDB& txdb, const CBlockIndexSmartPtr& pindex, bool f
         if (nSigOps > MAX_BLOCK_SIGOPS)
             return DoS(100, error("ConnectBlock() : too many sigops"));
 
-        CDiskTxPos posThisTx(pindex->blockKeyInDB, nTxPos);
+        CDiskTxPos posThisTx(pindex->getBlockKeyInDB(), nTxPos);
         if (!fJustCheck)
             nTxPos += ::GetSerializeSize(tx, SER_DISK, CLIENT_VERSION);
 
@@ -625,9 +625,13 @@ bool CBlock::ConnectBlock(CTxDB& txdb, const CBlockIndexSmartPtr& pindex, bool f
                                   nStakeReward, nCalculatedStakeReward));
     }
 
+    auto lg = pindex->lock_full();
     // ppcoin: track money supply and mint amount info
-    pindex->nMint        = nValueOut - nValueIn + nFees;
-    pindex->nMoneySupply = (pindex->pprev ? pindex->pprev->nMoneySupply : 0) + nValueOut - nValueIn;
+    pindex->setMintCount_unsafe(nValueOut - nValueIn + nFees);
+    pindex->setMoneySupply_unsafe((pindex->getPrevBlockIndex_unsafe()
+                                       ? pindex->getPrevBlockIndex_unsafe()->getMoneySupply_unsafe()
+                                       : 0) +
+                                  nValueOut - nValueIn);
     if (!txdb.WriteBlockIndex(CDiskBlockIndex(pindex.get())))
         return error("Connect() : WriteBlockIndex for pindex failed");
 
@@ -661,8 +665,8 @@ bool CBlock::ConnectBlock(CTxDB& txdb, const CBlockIndexSmartPtr& pindex, bool f
 
     // Update block index on disk without changing it in memory.
     // The memory index structure will be changed after the db commits.
-    if (pindex->pprev) {
-        CDiskBlockIndex blockindexPrev(boost::atomic_load(&pindex->pprev).get());
+    if (pindex->getPrevBlockIndex_unsafe()) {
+        CDiskBlockIndex blockindexPrev(pindex->getPrevBlockIndex_unsafe().get());
         blockindexPrev.hashNext = pindex->GetBlockHash();
         if (!txdb.WriteBlockIndex(blockindexPrev))
             return error("ConnectBlock() : WriteBlockIndex failed");
@@ -693,7 +697,7 @@ bool CBlock::SetBestChainInner(CTxDB& txdb, const CBlockIndexSmartPtr& pindexNew
         return error("SetBestChain() : TxnCommit failed");
 
     // Add to current best branch
-    pindexNew->pprev->pnext = pindexNew;
+    pindexNew->getPrevBlockIndex_unsafe()->setNextBlockIndex_unsafe(pindexNew);
 
     // Delete redundant memory transactions
     for (CTransaction& tx : vtx)
@@ -727,10 +731,11 @@ bool CBlock::SetBestChain(CTxDB& txdb, const CBlockIndexSmartPtr& pindexNew,
 
         // Reorganize is costly in terms of db load, as it works in a single db transaction.
         // Try to limit how much needs to be done inside
-        while (pindexIntermediate->pprev &&
-               pindexIntermediate->pprev->nChainTrust > boost::atomic_load(&pindexBest)->nChainTrust) {
+        while (pindexIntermediate->getPrevBlockIndex() &&
+               pindexIntermediate->getPrevBlockIndex()->getChainTrust() >
+                   boost::atomic_load(&pindexBest)->getChainTrust()) {
             vpindexSecondary.push_back(pindexIntermediate);
-            pindexIntermediate = pindexIntermediate->pprev;
+            pindexIntermediate = pindexIntermediate->getPrevBlockIndex();
         }
 
         if (!vpindexSecondary.empty())
@@ -766,7 +771,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, const CBlockIndexSmartPtr& pindexNew,
     // Update best block in wallet (so we can detect restored wallets)
     bool fIsInitialDownload = IsInitialBlockDownload();
     if (!fIsInitialDownload) {
-        const CBlockLocator locator(pindexNew.get());
+        const CBlockLocator locator(pindexNew);
         ::SetBestChain(locator);
     }
 
@@ -775,14 +780,17 @@ bool CBlock::SetBestChain(CTxDB& txdb, const CBlockIndexSmartPtr& pindexNew,
     boost::atomic_store(&pindexBest, pindexNew);
     CBlockIndexSmartPtr pindexBestPtr = boost::atomic_load(&pindexBest);
     pblockindexFBBHLast               = nullptr;
-    nBestHeight                       = pindexBestPtr->nHeight;
-    nBestChainTrust                   = pindexNew->nChainTrust;
+    nBestHeight                       = pindexBestPtr->getHeight();
+    nBestChainTrust                   = pindexNew->getChainTrust();
     nTimeBestReceived                 = GetTime();
     nTransactionsUpdated++;
 
-    uint256 nBestBlockTrust = pindexBestPtr->nHeight != 0
-                                  ? (pindexBestPtr->nChainTrust - pindexBestPtr->pprev->nChainTrust)
-                                  : pindexBestPtr->nChainTrust;
+    auto lg = pindexBestPtr->lock_full();
+
+    uint256 nBestBlockTrust = pindexBestPtr->getHeight_unsafe() != 0
+                                  ? (pindexBestPtr->getChainTrust_unsafe() -
+                                     pindexBestPtr->getPrevBlockIndex_unsafe()->getChainTrust_unsafe())
+                                  : pindexBestPtr->getChainTrust_unsafe();
 
     printf("SetBestChain: new best=%s  height=%d  trust=%s  blocktrust=%" PRId64 "  date=%s\n",
            hashBestChain.ToString().c_str(), nBestHeight.load(),
@@ -793,10 +801,11 @@ bool CBlock::SetBestChain(CTxDB& txdb, const CBlockIndexSmartPtr& pindexNew,
     if (!fIsInitialDownload) {
         int                      nUpgraded = 0;
         ConstCBlockIndexSmartPtr pindex    = boost::atomic_load(&pindexBest);
-        for (int i = 0; i < 100 && pindex != NULL; i++) {
-            if (pindex->nVersion > CBlock::CURRENT_VERSION)
+        for (int i = 0; i < 100 && pindex != nullptr; i++) {
+            if (pindex->getHeader_NVersion() > CBlock::CURRENT_VERSION) {
                 ++nUpgraded;
-            pindex = pindex->pprev;
+            }
+            pindex = pindex->getPrevBlockIndex();
         }
         if (nUpgraded > 0)
             printf("SetBestChain: %d of last 100 blocks above version %d\n", nUpgraded,
@@ -823,7 +832,7 @@ bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions)
         *this = pindex->GetBlockHeader();
         return true;
     }
-    if (!ReadFromDisk(pindex->blockKeyInDB, fReadTransactions))
+    if (!ReadFromDisk(pindex->getBlockKeyInDB(), fReadTransactions))
         return false;
     if (GetHash() != pindex->GetBlockHash())
         return error("CBlock::ReadFromDisk() : GetHash() doesn't match index");
@@ -836,7 +845,7 @@ bool CBlock::ReadFromDisk(const CBlockIndex* pindex, CTxDB& txdb, bool fReadTran
         *this = pindex->GetBlockHeader();
         return true;
     }
-    if (!ReadFromDisk(pindex->blockKeyInDB, txdb, fReadTransactions))
+    if (!ReadFromDisk(pindex->getBlockKeyInDB(), txdb, fReadTransactions))
         return false;
     if (GetHash() != pindex->GetBlockHash())
         return error("CBlock::ReadFromDisk() : GetHash() doesn't match index");
@@ -854,14 +863,14 @@ CBlockIndexSmartPtr CBlock::FindBlockByHeight(int nHeight)
         pblockindex = boost::atomic_load(&pindexBest);
     }
     if (pblockindexFBBHLast &&
-        abs(nHeight - pblockindex->nHeight) > abs(nHeight - pblockindexFBBHLast->nHeight)) {
+        abs(nHeight - pblockindex->getHeight()) > abs(nHeight - pblockindexFBBHLast->getHeight())) {
         pblockindex = pblockindexFBBHLast;
     }
-    while (pblockindex->nHeight > nHeight) {
-        pblockindex = pblockindex->pprev;
+    while (pblockindex->getHeight() > nHeight) {
+        pblockindex = pblockindex->getPrevBlockIndex();
     }
-    while (pblockindex->nHeight < nHeight) {
-        pblockindex = pblockindex->pnext;
+    while (pblockindex->getHeight() < nHeight) {
+        pblockindex = pblockindex->getNextBlockIndex();
     }
     pblockindexFBBHLast = pblockindex;
     return pblockindex;
@@ -869,27 +878,32 @@ CBlockIndexSmartPtr CBlock::FindBlockByHeight(int nHeight)
 
 void CBlock::InvalidChainFound(const CBlockIndexSmartPtr& pindexNew, CTxDB& txdb)
 {
-    if (pindexNew->nChainTrust > nBestInvalidTrust) {
-        nBestInvalidTrust = pindexNew->nChainTrust;
+    auto lg = pindexNew->lock_full();
+    if (pindexNew->getChainTrust_unsafe() > nBestInvalidTrust) {
+        nBestInvalidTrust = pindexNew->getChainTrust_unsafe();
         txdb.WriteBestInvalidTrust(CBigNum(nBestInvalidTrust));
         uiInterface.NotifyBlocksChanged();
     }
 
-    uint256 nBestInvalidBlockTrust = pindexNew->nChainTrust - pindexNew->pprev->nChainTrust;
+    uint256 nBestInvalidBlockTrust = pindexNew->getChainTrust_unsafe() -
+                                     pindexNew->getPrevBlockIndex_unsafe()->getChainTrust_unsafe();
 
     CBlockIndexSmartPtr pindexBestPtr = boost::atomic_load(&pindexBest);
 
-    uint256 nBestBlockTrust = pindexBestPtr->nHeight != 0
-                                  ? (pindexBestPtr->nChainTrust - pindexBestPtr->pprev->nChainTrust)
-                                  : pindexBestPtr->nChainTrust;
+    auto lgBest = pindexBestPtr->lock_full();
+
+    uint256 nBestBlockTrust = pindexBestPtr->getHeight_unsafe() != 0
+                                  ? (pindexBestPtr->getChainTrust_unsafe() -
+                                     pindexBestPtr->getPrevBlockIndex_unsafe()->getChainTrust_unsafe())
+                                  : pindexBestPtr->getChainTrust_unsafe();
 
     printf("InvalidChainFound: invalid block=%s  height=%d  trust=%s  blocktrust=%" PRId64 "  date=%s\n",
-           pindexNew->GetBlockHash().ToString().c_str(), pindexNew->nHeight,
-           CBigNum(pindexNew->nChainTrust).ToString().c_str(), nBestInvalidBlockTrust.Get64(),
+           pindexNew->GetBlockHash().ToString().c_str(), pindexNew->getHeight_unsafe(),
+           CBigNum(pindexNew->getChainTrust_unsafe()).ToString().c_str(), nBestInvalidBlockTrust.Get64(),
            DateTimeStrFormat("%x %H:%M:%S", pindexNew->GetBlockTime()).c_str());
     printf("InvalidChainFound:  current best=%s  height=%d  trust=%s  blocktrust=%" PRId64 "  date=%s\n",
            hashBestChain.ToString().c_str(), nBestHeight.load(),
-           CBigNum(pindexBestPtr->nChainTrust).ToString().c_str(), nBestBlockTrust.Get64(),
+           CBigNum(pindexBestPtr->getChainTrust_unsafe()).ToString().c_str(), nBestBlockTrust.Get64(),
            DateTimeStrFormat("%x %H:%M:%S", pindexBestPtr->GetBlockTime()).c_str());
 }
 
@@ -901,26 +915,25 @@ bool CBlock::Reorganize(CTxDB& txdb, CBlockIndexSmartPtr& pindexNew, const bool 
     CBlockIndexSmartPtr pfork   = boost::atomic_load(&pindexBest);
     CBlockIndexSmartPtr plonger = pindexNew;
     while (pfork != plonger) {
-        while (plonger->nHeight > pfork->nHeight)
-            if (!(plonger = boost::atomic_load(&plonger->pprev)))
+        while (plonger->getHeight() > pfork->getHeight())
+            if (!(plonger = plonger->getPrevBlockIndex()))
                 return error("Reorganize() : plonger->pprev is null");
         if (pfork == plonger)
             break;
-        if (!(pfork = pfork->pprev))
+        if (!(pfork = pfork->getPrevBlockIndex()))
             return error("Reorganize() : pfork->pprev is null");
     }
 
     // List of what to disconnect
     std::vector<CBlockIndexSmartPtr> vDisconnect;
     for (CBlockIndexSmartPtr pindex = boost::atomic_load(&pindexBest); pindex != pfork;
-         pindex                     = boost::atomic_load(&pindex->pprev)) {
+         pindex                     = pindex->getPrevBlockIndex()) {
         vDisconnect.push_back(pindex);
     }
 
     // List of what to connect
     std::vector<CBlockIndexSmartPtr> vConnect;
-    for (CBlockIndexSmartPtr pindex = pindexNew; pindex != pfork;
-         pindex                     = boost::atomic_load(&pindex->pprev)) {
+    for (CBlockIndexSmartPtr pindex = pindexNew; pindex != pfork; pindex = pindex->getPrevBlockIndex()) {
         vConnect.push_back(pindex);
     }
     reverse(vConnect.begin(), vConnect.end());
@@ -946,7 +959,7 @@ bool CBlock::Reorganize(CTxDB& txdb, CBlockIndexSmartPtr& pindexNew, const bool 
         // point should only happen with -reindex/-loadblock, or a misbehaving peer.
         BOOST_REVERSE_FOREACH(const CTransaction& tx, block.vtx)
         if (!(tx.IsCoinBase() || tx.IsCoinStake()) &&
-            pindex->nHeight > Checkpoints::GetTotalBlocksEstimate())
+            pindex->getHeight() > Checkpoints::GetTotalBlocksEstimate())
             vResurrect.push_front(tx);
     }
 
@@ -975,18 +988,22 @@ bool CBlock::Reorganize(CTxDB& txdb, CBlockIndexSmartPtr& pindexNew, const bool 
         return error("Reorganize() : TxnCommit failed");
 
     // Disconnect shorter branch
-    for (CBlockIndexSmartPtr& pindex : vDisconnect)
-        if (pindex->pprev)
-            pindex->pprev->pnext = nullptr;
+    for (CBlockIndexSmartPtr& pindex : vDisconnect) {
+        if (pindex->getPrevBlockIndex()) {
+            pindex->getPrevBlockIndex()->setNextBlockIndex(nullptr);
+        }
+    }
 
     // Connect longer branch
-    for (CBlockIndexSmartPtr& pindex : vConnect)
-        if (pindex->pprev)
-            pindex->pprev->pnext = pindex;
+    for (CBlockIndexSmartPtr& pindex : vConnect) {
+        if (pindex->getPrevBlockIndex()) {
+            pindex->getPrevBlockIndex()->setNextBlockIndex(pindex);
+        }
+    }
 
     // Resurrect memory transactions that were in the disconnected branch
     for (CTransaction& tx : vResurrect)
-        AcceptToMemoryPool(mempool, tx, NULL);
+        AcceptToMemoryPool(mempool, tx, nullptr);
 
     // Delete redundant memory transactions that are in the connected branch
     for (CTransaction& tx : vDelete) {
@@ -1030,45 +1047,53 @@ bool CBlock::AddToBlockIndex(uint256 nBlockPos, const uint256& hashProof, CTxDB&
 
     // Construct new block index object
     CBlockIndexSmartPtr pindexNew = boost::make_shared<CBlockIndex>(nBlockPos, *this);
+
+    auto lg = pindexNew->lock_full();
     if (!pindexNew)
         return error("AddToBlockIndex() : new CBlockIndex failed");
-    pindexNew->phashBlock              = &hash;
+    pindexNew->setBlockHashPtr_unsafe(&hash);
     BlockIndexMapType::iterator miPrev = mapBlockIndex.find(hashPrevBlock);
     if (miPrev != mapBlockIndex.end()) {
-        pindexNew->pprev   = boost::atomic_load(&miPrev->second);
-        pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
+        pindexNew->setPrevBlockIndex_unsafe(boost::atomic_load(&miPrev->second));
+        pindexNew->setHeight_unsafe(pindexNew->getPrevBlockIndex_unsafe()->getHeight_unsafe() + 1);
     }
 
     // ppcoin: compute chain trust score
-    pindexNew->nChainTrust =
-        (pindexNew->pprev ? pindexNew->pprev->nChainTrust : 0) + pindexNew->GetBlockTrust();
+    pindexNew->setChainTrust_unsafe((pindexNew->getPrevBlockIndex_unsafe()
+                                         ? pindexNew->getPrevBlockIndex_unsafe()->getChainTrust_unsafe()
+                                         : 0) +
+                                    pindexNew->GetBlockTrust());
 
     // ppcoin: compute stake entropy bit for stake modifier
     if (!pindexNew->SetStakeEntropyBit(GetStakeEntropyBit()))
         return error("AddToBlockIndex() : SetStakeEntropyBit() failed");
 
     // Record proof hash value
-    pindexNew->hashProof = hashProof;
+    pindexNew->setHashProof_unsafe(hashProof);
 
     // ppcoin: compute stake modifier
     uint64_t nStakeModifier          = 0;
     bool     fGeneratedStakeModifier = false;
-    if (!ComputeNextStakeModifier(pindexNew->pprev.get(), nStakeModifier, fGeneratedStakeModifier))
+
+    if (!ComputeNextStakeModifier(pindexNew->getPrevBlockIndex_unsafe(), nStakeModifier,
+                                  fGeneratedStakeModifier))
         return error("AddToBlockIndex() : ComputeNextStakeModifier() failed");
-    pindexNew->SetStakeModifier(nStakeModifier, fGeneratedStakeModifier);
-    pindexNew->nStakeModifierChecksum = GetStakeModifierChecksum(pindexNew.get());
-    if (!CheckStakeModifierCheckpoints(pindexNew->nHeight, pindexNew->nStakeModifierChecksum))
+    pindexNew->SetStakeModifier_unsafe(nStakeModifier, fGeneratedStakeModifier);
+    pindexNew->setStakeModifierChecksum(GetStakeModifierChecksum(pindexNew.get()));
+    if (!CheckStakeModifierCheckpoints(pindexNew->getHeight_unsafe(),
+                                       pindexNew->getStakeModifierChecksum_unsafe()))
         return error("AddToBlockIndex() : Rejected by stake modifier checkpoint height=%d, "
                      "modifier=0x%016" PRIx64,
-                     pindexNew->nHeight, nStakeModifier);
+                     pindexNew->getHeight_unsafe(), nStakeModifier);
     // return error("AddToBlockIndex() : Rejected by stake modifier checkpoint height=%d,
     // checksum=0x%016" PRIx64, pindexNew->nHeight, pindexNew->nStakeModifierChecksum);
 
     // Add to mapBlockIndex
     BlockIndexMapType::iterator mi = mapBlockIndex.insert(std::make_pair(hash, pindexNew)).first;
     if (pindexNew->IsProofOfStake())
-        setStakeSeen.insert(std::make_pair(pindexNew->prevoutStake, pindexNew->nStakeTime));
-    pindexNew->phashBlock = &((*mi).first);
+        setStakeSeen.insert(
+            std::make_pair(pindexNew->getPOSPrevoutStake_unsafe(), pindexNew->getPOSStakeTime_unsafe()));
+    pindexNew->setBlockHashPtr_unsafe(&((*mi).first));
 
     // Write to disk block index
     if (createDbTransaction && !txdb.TxnBegin())
@@ -1080,7 +1105,7 @@ bool CBlock::AddToBlockIndex(uint256 nBlockPos, const uint256& hashProof, CTxDB&
     LOCK(cs_main);
 
     // New best
-    if (pindexNew->nChainTrust > nBestChainTrust)
+    if (pindexNew->getChainTrust_unsafe() > nBestChainTrust)
         if (!SetBestChain(txdb, pindexNew, createDbTransaction))
             return false;
 
@@ -1206,7 +1231,7 @@ bool CBlock::AcceptBlock()
         const uint256 prevBlockHash = this->hashPrevBlock;
         auto          it            = mapBlockIndex.find(prevBlockHash);
         if (it != mapBlockIndex.cend()) {
-            int64_t newBlockPrevBlockHeight = it->second->nHeight;
+            int64_t newBlockPrevBlockHeight = it->second->getHeight();
             if (newBlockPrevBlockHeight + 1 < maxCheckpointBlockHeight) {
                 return DoS(
                     25,
@@ -1238,13 +1263,13 @@ bool CBlock::AcceptBlock()
     if (mi == mapBlockIndex.end())
         return DoS(10, error("AcceptBlock() : prev block not found\n"));
     CBlockIndexSmartPtr pindexPrev = boost::atomic_load(&mi->second);
-    int                 nHeight    = pindexPrev->nHeight + 1;
+    int                 nHeight    = pindexPrev->getHeight() + 1;
 
     if (IsProofOfWork() && nHeight > LAST_POW_BLOCK)
         return DoS(100, error("AcceptBlock() : reject proof-of-work at height %d", nHeight));
 
     // Check proof-of-work or proof-of-stake
-    if (nBits != GetNextTargetRequired(pindexPrev.get(), IsProofOfStake()))
+    if (nBits != GetNextTargetRequired(pindexPrev, IsProofOfStake()))
         return DoS(100, error("AcceptBlock() : incorrect %s",
                               IsProofOfWork() ? "proof-of-work" : "proof-of-stake"));
 

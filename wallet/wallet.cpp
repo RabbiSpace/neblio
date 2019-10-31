@@ -492,8 +492,8 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn)
                         }
                     }
 
-                    unsigned int& blocktime = mapBlockIndex[wtxIn.hashBlock]->nTime;
-                    wtx.nTimeSmart          = std::max(latestEntry, std::min(blocktime, latestNow));
+                    unsigned int blocktime = mapBlockIndex[wtxIn.hashBlock]->getHeader_NTime();
+                    wtx.nTimeSmart         = std::max(latestEntry, std::min(blocktime, latestNow));
                 } else
                     printf("AddToWallet() : found %s in block %s not in index\n",
                            wtxIn.GetHash().ToString().substr(0, 10).c_str(),
@@ -880,17 +880,19 @@ bool CWalletTx::WriteToDisk() { return CWalletDB(pwallet->strWalletFile).WriteTx
 // Scan the block chain (starting in pindexStart) for transactions
 // from or to us. If fUpdate is true, found transactions that already
 // exist in the wallet will be updated.
-int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
+int CWallet::ScanForWalletTransactions(CBlockIndexSmartPtr pindexStart, bool fUpdate)
 {
     int ret = 0;
 
-    CBlockIndex* pindex = pindexStart;
+    CBlockIndexSmartPtr pindex = pindexStart;
 
-    uint64_t blockCount = pindexStart->nHeight;
+    uint64_t blockCount = pindexStart->getHeight();
 
     {
         LOCK2(cs_main, cs_wallet);
         while (pindex) {
+            auto lg = pindex->lock_full();
+
             blockCount++;
 
             if (blockCount % 1000 == 0) {
@@ -900,18 +902,18 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
 
             // no need to read and scan block, if block was created before
             // our wallet birthday (as adjusted for block time variability)
-            if (nTimeFirstKey && (pindex->nTime < (nTimeFirstKey - 7200))) {
-                pindex = boost::atomic_load(&pindex->pnext).get();
+            if (nTimeFirstKey && (pindex->getHeader_NTime_unsafe() < (nTimeFirstKey - 7200))) {
+                pindex = pindex->getNextBlockIndex_unsafe();
                 continue;
             }
 
             CBlock block;
-            block.ReadFromDisk(pindex, true);
+            block.ReadFromDisk(pindex.get(), true);
             for (CTransaction& tx : block.vtx) {
                 if (AddToWalletIfInvolvingMe(tx, &block, fUpdate))
                     ret++;
             }
-            pindex = boost::atomic_load(&pindex->pnext).get();
+            pindex = pindex->getNextBlockIndex_unsafe();
         }
         uiInterface.InitMessage(_("Rescanning... ") + "(done)");
     }
@@ -964,7 +966,7 @@ void CWallet::ReacceptWalletTransactions()
         }
         if (!vMissingTx.empty()) {
             // TODO: optimize this to scan just part of the block chain?
-            if (ScanForWalletTransactions(boost::atomic_load(&pindexGenesisBlock).get()))
+            if (ScanForWalletTransactions(boost::atomic_load(&pindexGenesisBlock)))
                 fRepeat = true; // Found missing transactions: re-do re-accept.
         }
     }
@@ -2959,14 +2961,14 @@ void CWallet::GetKeyBirthTimes(std::map<CKeyID, int64_t>& mapKeyBirth) const
         BlockIndexMapType::const_iterator blit = mapBlockIndex.find(wtx.hashBlock);
         if (blit != mapBlockIndex.end() && blit->second->IsInMainChain()) {
             // ... which are already in a block
-            int nHeight = blit->second->nHeight;
+            int nHeight = blit->second->getHeight();
             for (const CTxOut& txout : wtx.vout) {
                 // iterate over all their outputs
                 ::ExtractAffectedKeys(*this, txout.scriptPubKey, vAffected);
                 for (const CKeyID& keyid : vAffected) {
                     // ... and all their affected keys
                     std::map<CKeyID, CBlockIndexSmartPtr>::iterator rit = mapKeyFirstBlock.find(keyid);
-                    if (rit != mapKeyFirstBlock.end() && nHeight < rit->second->nHeight)
+                    if (rit != mapKeyFirstBlock.end() && nHeight < rit->second->getHeight())
                         rit->second = boost::atomic_load(&blit->second);
                 }
                 vAffected.clear();
@@ -2977,7 +2979,7 @@ void CWallet::GetKeyBirthTimes(std::map<CKeyID, int64_t>& mapKeyBirth) const
     // Extract block timestamps for those keys
     for (std::map<CKeyID, CBlockIndexSmartPtr>::const_iterator it = mapKeyFirstBlock.begin();
          it != mapKeyFirstBlock.end(); it++) {
-        mapKeyBirth[it->first] = it->second->nTime - 7200; // block times can be 2h off
+        mapKeyBirth[it->first] = it->second->getHeader_NTime() - 7200; // block times can be 2h off
     }
 }
 

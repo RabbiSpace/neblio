@@ -425,19 +425,22 @@ bool CTransaction::ConnectInputs(CTxDB& /*txdb*/, MapPrevTx inputs,
 
             // If prev is coinbase or coinstake, check that it's matured
             int nCbM = CoinbaseMaturity();
-            if (txPrev.IsCoinBase() || txPrev.IsCoinStake())
+            if (txPrev.IsCoinBase() || txPrev.IsCoinStake()) {
+                auto lgb = pindexBlock->lock_full();
                 for (ConstCBlockIndexSmartPtr pindex = boost::atomic_load(&pindexBlock);
-                     pindex && pindexBlock->nHeight - pindex->nHeight < nCbM;
-                     pindex = boost::atomic_load(&pindex->pprev)) {
-                    static_assert(std::is_same<decltype(pindex->blockKeyInDB),
+                     pindex && pindexBlock->getHeight() - pindex->getHeight() < nCbM;
+                     pindex = pindex->getPrevBlockIndex()) {
+                    auto lg = pindex->lock_full();
+                    static_assert(std::is_same<decltype(pindex->getBlockKeyInDB_unsafe()),
                                                decltype(txindex.pos.nBlockPos)>::value,
                                   "Expected same types");
-                    if (pindex->blockKeyInDB == txindex.pos.nBlockPos) {
+                    if (pindex->getBlockKeyInDB_unsafe() == txindex.pos.nBlockPos) {
                         return error("ConnectInputs() : tried to spend %s at depth %d",
                                      txPrev.IsCoinBase() ? "coinbase" : "coinstake",
-                                     pindexBlock->nHeight - pindex->nHeight);
+                                     pindexBlock->getHeight_unsafe() - pindex->getHeight_unsafe());
                     }
                 }
+            }
 
             // ppcoin: check transaction timestamp
             if (txPrev.nTime > nTime)

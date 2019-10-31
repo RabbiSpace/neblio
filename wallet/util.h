@@ -794,16 +794,16 @@ void ignore_unused()
 {
 }
 
-template <typename T>
+template <typename T, typename MutexType = boost::recursive_mutex>
 class LockedVar
 {
-    T                              var;
-    mutable boost::recursive_mutex mtx;
+    T                 var;
+    mutable MutexType mtx;
 
 public:
     LockedVar(T&& Var)
     {
-        boost::lock_guard<boost::recursive_mutex> lg(mtx);
+        boost::lock_guard<MutexType> lg(mtx);
         var = std::move(Var);
     }
 
@@ -811,15 +811,25 @@ public:
 
     T& get()
     {
-        boost::lock_guard<boost::recursive_mutex> lg(mtx);
+        boost::lock_guard<MutexType> lg(mtx);
         return var;
     }
 
     T& get_unsafe() { return var; }
 
-    boost::shared_ptr<boost::lock_guard<boost::recursive_mutex>> get_lock()
+    [[nodiscard]] boost::shared_ptr<boost::lock_guard<MutexType>> get_lock() const
     {
-        return boost::make_shared<boost::lock_guard<boost::recursive_mutex>>(mtx);
+        return boost::make_shared<boost::lock_guard<MutexType>>(mtx);
+    }
+
+    [[nodiscard]] boost::shared_ptr<boost::unique_lock<MutexType>> get_try_lock() const
+    {
+        auto lock = boost::make_shared<boost::unique_lock<MutexType>>(mtx, boost::defer_lock);
+        if (mtx.try_lock()) {
+            return lock;
+        } else {
+            return nullptr;
+        }
     }
 };
 

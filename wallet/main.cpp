@@ -727,8 +727,13 @@ unsigned int ComputeMinStake(unsigned int nBase, int64_t nTime, unsigned int /*n
 // ppcoin: find last block index up to pindex
 const CBlockIndex* GetLastBlockIndex(const CBlockIndex* pindex, bool fProofOfStake)
 {
-    while (pindex && pindex->pprev && (pindex->IsProofOfStake() != fProofOfStake))
-        pindex = boost::atomic_load(&pindex->pprev).get();
+    while (pindex) {
+        auto lg = pindex->lock_full();
+        if (!(pindex->getPrevBlockIndex_unsafe() && pindex->IsProofOfStake_unsafe() != fProofOfStake)) {
+            break;
+        }
+        pindex = pindex->getPrevBlockIndex_unsafe().get();
+    }
     return pindex;
 }
 
@@ -736,15 +741,17 @@ static unsigned int GetNextTargetRequiredV1(const CBlockIndex* pindexLast, bool 
 {
     CBigNum bnTargetLimit = fProofOfStake ? bnProofOfStakeLimit : bnProofOfWorkLimit;
 
-    if (pindexLast == NULL)
+    if (pindexLast == nullptr)
         return bnTargetLimit.GetCompact(); // genesis block
 
+    auto lg = pindexLast->lock_full();
+
     const CBlockIndex* pindexPrev = GetLastBlockIndex(pindexLast, fProofOfStake);
-    if (pindexPrev->pprev == NULL)
+    if (pindexPrev->getPrevBlockIndex_unsafe() == nullptr)
         return bnTargetLimit.GetCompact(); // first block
     const CBlockIndex* pindexPrevPrev =
-        GetLastBlockIndex(boost::atomic_load(&pindexPrev->pprev).get(), fProofOfStake);
-    if (pindexPrevPrev->pprev == NULL)
+        GetLastBlockIndex(pindexPrev->getPrevBlockIndex_unsafe().get(), fProofOfStake);
+    if (pindexPrevPrev->getPrevBlockIndex_unsafe() == nullptr)
         return bnTargetLimit.GetCompact(); // second block
 
     int64_t nActualSpacing = pindexPrev->GetBlockTime() - pindexPrevPrev->GetBlockTime();
@@ -752,7 +759,7 @@ static unsigned int GetNextTargetRequiredV1(const CBlockIndex* pindexLast, bool 
     // ppcoin: target change every block
     // ppcoin: retarget with exponential moving toward target spacing
     CBigNum bnNew;
-    bnNew.SetCompact(pindexPrev->nBits);
+    bnNew.SetCompact(pindexPrev->getHeader_NBits_unsafe());
     unsigned int nTS       = TargetSpacing();
     int64_t      nInterval = nTargetTimespan / nTS;
     bnNew *= ((nInterval - 1) * nTS + nActualSpacing + nActualSpacing);
@@ -777,7 +784,7 @@ int64_t CalculateActualBlockSpacingForV3(const CBlockIndex* pindexLast)
     // get the latest blocks from the blocks. The amount of blocks is: TARGET_AVERAGE_BLOCK_COUNT
     int64_t forkBlock = GetNetForks().getFirstBlockOfFork(NetworkFork::NETFORK__4_RETARGET_CORRECTION);
     // we start counting block times from the fork
-    int64_t numOfBlocksToAverage = pindexLast->nHeight - (forkBlock + 1);
+    int64_t numOfBlocksToAverage = pindexLast->getHeight_unsafe() - (forkBlock + 1);
     // minimum number of blocks to calculate a difference is 2, and max is TARGET_AVERAGE_BLOCK_COUNT
     if (numOfBlocksToAverage <= 1) {
         numOfBlocksToAverage = 2;
@@ -791,13 +798,14 @@ int64_t CalculateActualBlockSpacingForV3(const CBlockIndex* pindexLast)
     std::vector<int64_t> blockTimeDifferences;
     blockTimes.reserve(numOfBlocksToAverage);
     blockTimeDifferences.reserve(numOfBlocksToAverage);
-    const CBlockIndex* currIndex = pindexLast;
+    ConstCBlockIndexSmartPtr currIndex = pindexLast->shared_from_this();
     blockTimes.resize(numOfBlocksToAverage);
     for (int64_t i = 0; i < numOfBlocksToAverage; i++) {
+        auto lg = currIndex->lock_full();
         // fill the blocks in reverse order
-        blockTimes.at(numOfBlocksToAverage - i - 1) = currIndex->GetBlockTime();
+        blockTimes.at(numOfBlocksToAverage - i - 1) = currIndex->GetBlockTime_unsafe();
         // move to the previous block
-        currIndex = boost::atomic_load(&currIndex->pprev).get();
+        currIndex = currIndex->getPrevBlockIndex_unsafe();
     }
 
     // sort block times to avoid negative values
@@ -816,15 +824,17 @@ static unsigned int GetNextTargetRequiredV2(const CBlockIndex* pindexLast, bool 
 {
     CBigNum bnTargetLimit = fProofOfStake ? bnProofOfStakeLimit : bnProofOfWorkLimit;
 
-    if (pindexLast == NULL)
+    if (pindexLast == nullptr)
         return bnTargetLimit.GetCompact(); // genesis block
 
+    auto lg = pindexLast->lock_full();
+
     const CBlockIndex* pindexPrev = GetLastBlockIndex(pindexLast, fProofOfStake);
-    if (pindexPrev->pprev == NULL)
+    if (pindexPrev->getPrevBlockIndex_unsafe() == nullptr)
         return bnTargetLimit.GetCompact(); // first block
     const CBlockIndex* pindexPrevPrev =
-        GetLastBlockIndex(boost::atomic_load(&pindexPrev->pprev).get(), fProofOfStake);
-    if (pindexPrevPrev->pprev == NULL)
+        GetLastBlockIndex(pindexPrev->getPrevBlockIndex_unsafe().get(), fProofOfStake);
+    if (pindexPrevPrev->getPrevBlockIndex_unsafe() == nullptr)
         return bnTargetLimit.GetCompact(); // second block
 
     int64_t      nActualSpacing = pindexPrev->GetBlockTime() - pindexPrevPrev->GetBlockTime();
@@ -835,7 +845,7 @@ static unsigned int GetNextTargetRequiredV2(const CBlockIndex* pindexLast, bool 
     // ppcoin: target change every block
     // ppcoin: retarget with exponential moving toward target spacing
     CBigNum bnNew;
-    bnNew.SetCompact(pindexPrev->nBits);
+    bnNew.SetCompact(pindexPrev->getHeader_NBits_unsafe());
     int64_t nInterval = nTargetTimespan / nTS;
     bnNew *= ((nInterval - 1) * nTS + nActualSpacing + nActualSpacing);
     bnNew /= ((nInterval + 1) * nTS);
@@ -850,15 +860,17 @@ static unsigned int GetNextTargetRequiredV3(const CBlockIndex* pindexLast, bool 
 {
     CBigNum bnTargetLimit = fProofOfStake ? bnProofOfStakeLimit : bnProofOfWorkLimit;
 
-    if (pindexLast == NULL)
+    if (pindexLast == nullptr)
         return bnTargetLimit.GetCompact(); // genesis block
 
+    auto lg = pindexLast->lock_full();
+
     const CBlockIndex* pindexPrev = GetLastBlockIndex(pindexLast, fProofOfStake);
-    if (pindexPrev->pprev == NULL)
+    if (pindexPrev->getPrevBlockIndex_unsafe() == nullptr)
         return bnTargetLimit.GetCompact(); // first block
     const CBlockIndex* pindexPrevPrev =
-        GetLastBlockIndex(boost::atomic_load(&pindexPrev->pprev).get(), fProofOfStake);
-    if (pindexPrevPrev->pprev == NULL)
+        GetLastBlockIndex(pindexPrev->getPrevBlockIndex_unsafe().get(), fProofOfStake);
+    if (pindexPrevPrev->getPrevBlockIndex_unsafe() == nullptr)
         return bnTargetLimit.GetCompact(); // second block
 
     int64_t nActualSpacing = CalculateActualBlockSpacingForV3(pindexLast);
@@ -883,7 +895,7 @@ static unsigned int GetNextTargetRequiredV3(const CBlockIndex* pindexLast, bool 
     // ppcoin: target change every block
     // ppcoin: retarget with exponential moving toward target spacing
     CBigNum newTarget;
-    newTarget.SetCompact(pindexPrev->nBits); // target from previous block
+    newTarget.SetCompact(pindexPrev->getHeader_NBits_unsafe()); // target from previous block
     int64_t nInterval = nTargetTimespan / nTS;
 
     static constexpr const int k = 15;
@@ -898,14 +910,14 @@ static unsigned int GetNextTargetRequiredV3(const CBlockIndex* pindexLast, bool 
     return newTarget.GetCompact();
 }
 
-unsigned int GetNextTargetRequired(const CBlockIndex* pindexLast, bool fProofOfStake)
+unsigned int GetNextTargetRequired(ConstCBlockIndexSmartPtr pindexLast, bool fProofOfStake)
 {
-    if (pindexLast->nHeight < 2000)
-        return GetNextTargetRequiredV1(pindexLast, fProofOfStake);
+    if (pindexLast->getHeight() < 2000)
+        return GetNextTargetRequiredV1(pindexLast.get(), fProofOfStake);
     else if (GetNetForks().isForkActivated(NetworkFork::NETFORK__4_RETARGET_CORRECTION))
-        return GetNextTargetRequiredV3(pindexLast, fProofOfStake);
+        return GetNextTargetRequiredV3(pindexLast.get(), fProofOfStake);
     else
-        return GetNextTargetRequiredV2(pindexLast, fProofOfStake);
+        return GetNextTargetRequiredV2(pindexLast.get(), fProofOfStake);
 }
 
 bool CheckProofOfWork(uint256 hash, unsigned int nBits)
@@ -1234,7 +1246,7 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
     // Check for duplicate
     uint256 hash = pblock->GetHash();
     if (mapBlockIndex.count(hash))
-        return error("ProcessBlock() : already have block %d %s", mapBlockIndex[hash]->nHeight,
+        return error("ProcessBlock() : already have block %d %s", mapBlockIndex[hash]->getHeight(),
                      hash.ToString().c_str());
     if (mapOrphanBlocks.count(hash))
         return error("ProcessBlock() : already have block (orphan) %s", hash.ToString().c_str());
@@ -1256,17 +1268,17 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
     if (pcheckpoint && pblock->hashPrevBlock != hashBestChain &&
         !Checkpoints::WantedByPendingSyncCheckpoint(hash)) {
         // Extra checks to prevent "fill up memory by spamming with bogus blocks"
-        int64_t deltaTime = pblock->GetBlockTime() - pcheckpoint->nTime;
+        int64_t deltaTime = pblock->GetBlockTime() - pcheckpoint->getHeader_NTime();
         CBigNum bnNewBlock;
         bnNewBlock.SetCompact(pblock->nBits);
         CBigNum bnRequired;
 
         if (pblock->IsProofOfStake())
-            bnRequired.SetCompact(
-                ComputeMinStake(GetLastBlockIndex(pcheckpoint, true)->nBits, deltaTime, pblock->nTime));
+            bnRequired.SetCompact(ComputeMinStake(
+                GetLastBlockIndex(pcheckpoint, true)->getHeader_NBits(), deltaTime, pblock->nTime));
         else
             bnRequired.SetCompact(
-                ComputeMinWork(GetLastBlockIndex(pcheckpoint, false)->nBits, deltaTime));
+                ComputeMinWork(GetLastBlockIndex(pcheckpoint, false)->getHeader_NBits(), deltaTime));
 
         if (bnNewBlock > bnRequired) {
             if (pfrom)
@@ -1301,7 +1313,7 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
 
         // Ask this guy to fill in what we're missing
         if (pfrom) {
-            pfrom->PushGetBlocks(boost::atomic_load(&pindexBest).get(), GetOrphanRoot(pblock2));
+            pfrom->PushGetBlocks(boost::atomic_load(&pindexBest), GetOrphanRoot(pblock2));
             // ppcoin: getblocks may not obtain the ancestor block rejected
             // earlier by duplicate-stake check so we ask for it again directly
             if (!IsInitialBlockDownload())
@@ -1650,7 +1662,7 @@ void PrintBlockTree()
     map<CBlockIndex*, vector<CBlockIndexSmartPtr>> mapNext;
     for (BlockIndexMapType::iterator mi = mapBlockIndex.begin(); mi != mapBlockIndex.end(); ++mi) {
         CBlockIndexSmartPtr pindex = boost::atomic_load(&mi->second);
-        mapNext[boost::atomic_load(&pindex->pprev).get()].push_back(pindex);
+        mapNext[pindex->getPrevBlockIndex().get()].push_back(pindex);
         // test
         // while (rand() % 3 == 0)
         //    mapNext[pindex->pprev].push_back(pindex);
@@ -1684,22 +1696,27 @@ void PrintBlockTree()
         // print item
         CBlock block;
         block.ReadFromDisk(pindex.get());
-        printf("%d (%s) %s  %08x  %s  mint %7s  tx %" PRIszu "", pindex->nHeight,
-               pindex->blockKeyInDB.ToString().c_str(), block.GetHash().ToString().c_str(), block.nBits,
-               DateTimeStrFormat("%x %H:%M:%S", block.GetBlockTime()).c_str(),
-               FormatMoney(pindex->nMint).c_str(), block.vtx.size());
+        {
+            auto lg = pindex->lock_full();
+            printf("%d (%s) %s  %08x  %s  mint %7s  tx %" PRIszu "", pindex->getHeight_unsafe(),
+                   pindex->getBlockKeyInDB_unsafe().ToString().c_str(),
+                   block.GetHash().ToString().c_str(), block.nBits,
+                   DateTimeStrFormat("%x %H:%M:%S", block.GetBlockTime()).c_str(),
+                   FormatMoney(pindex->getMintCount_unsafe()).c_str(), block.vtx.size());
+        }
 
         PrintWallets(block);
 
         // put the main time-chain first
         vector<CBlockIndexSmartPtr>& vNext = mapNext[pindex.get()];
         for (unsigned int i = 0; i < vNext.size(); i++) {
-            if (vNext[i]->pnext) {
+            auto lgN = vNext[i]->lock_full();
+            auto lg0 = vNext[0]->lock_full();
+            if (vNext[i]->getNextBlockIndex()) {
                 swap(vNext[0], vNext[i]);
                 break;
             }
         }
-
         // iterate children
         for (unsigned int i = 0; i < vNext.size(); i++)
             vStack.push_back(make_pair(nCol + i, vNext[i]));
@@ -1994,7 +2011,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             (pfrom->nVersion < NOBLKS_VERSION_START || pfrom->nVersion >= NOBLKS_VERSION_END) &&
             (nAskedForBlocks < 1 || vNodes.size() <= 1)) {
             nAskedForBlocks++;
-            pfrom->PushGetBlocks(pindexBest.get(), uint256(0));
+            pfrom->PushGetBlocks(pindexBest, uint256(0));
         }
 
         // Relay alerts
@@ -2131,12 +2148,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                 if (!fImporting)
                     pfrom->AskFor(inv);
             } else if (inv.type == MSG_BLOCK && mapOrphanBlocks.count(inv.hash)) {
-                pfrom->PushGetBlocks(pindexBest.get(), GetOrphanRoot(mapOrphanBlocks[inv.hash]));
+                pfrom->PushGetBlocks(pindexBest, GetOrphanRoot(mapOrphanBlocks[inv.hash]));
             } else if (nInv == nLastBlock) {
                 // In case we are on a very long side-chain, it is possible that we already have
                 // the last block in an inv bundle sent in response to getblocks. Try to detect
                 // this situation and push another getblocks to continue.
-                pfrom->PushGetBlocks(boost::atomic_load(&mapBlockIndex[inv.hash]).get(), uint256(0));
+                pfrom->PushGetBlocks(boost::atomic_load(&mapBlockIndex[inv.hash]), uint256(0));
                 if (fDebug)
                     printf("force request: %s\n", inv.ToString().c_str());
             }
@@ -2242,29 +2259,30 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         // Send the rest of the chain
         if (pindex)
-            pindex = boost::atomic_load(&pindex->pnext);
+            pindex = pindex->getNextBlockIndex();
         int nLimit = 500;
-        printf("getblocks %d to %s limit %d\n", (pindex ? pindex->nHeight : -1),
+        printf("getblocks %d to %s limit %d\n", (pindex ? pindex->getHeight() : -1),
                hashStop.ToString().c_str(), nLimit);
-        for (; pindex; pindex = pindex->pnext) {
-            if (pindex->GetBlockHash() == hashStop) {
-                printf("  getblocks stopping at %d %s\n", pindex->nHeight,
-                       pindex->GetBlockHash().ToString().c_str());
+        for (; pindex; pindex = pindex->getNextBlockIndex()) {
+            auto lgi = pindex->lock_full();
+            if (pindex->GetBlockHash_unsafe() == hashStop) {
+                printf("  getblocks stopping at %d %s\n", pindex->getHeight_unsafe(),
+                       pindex->GetBlockHash_unsafe().ToString().c_str());
                 unsigned int nSMA = StakeMinAge();
                 // ppcoin: tell downloading node about the latest block if it's
                 // without risk being rejected due to stake connection check
-                if (hashStop != hashBestChain &&
-                    pindex->GetBlockTime() + nSMA > boost::atomic_load(&pindexBest)->GetBlockTime())
+                if (hashStop != hashBestChain && pindex->GetBlockTime_unsafe() + nSMA >
+                                                     boost::atomic_load(&pindexBest)->GetBlockTime())
                     pfrom->PushInventory(CInv(MSG_BLOCK, hashBestChain));
                 break;
             }
-            pfrom->PushInventory(CInv(MSG_BLOCK, pindex->GetBlockHash()));
+            pfrom->PushInventory(CInv(MSG_BLOCK, pindex->GetBlockHash_unsafe()));
             if (--nLimit <= 0) {
                 // When this block is requested, we'll send an inv that'll make them
                 // getblocks the next batch of inventory.
-                printf("  getblocks stopping at limit %d %s\n", pindex->nHeight,
-                       pindex->GetBlockHash().ToString().c_str());
-                pfrom->hashContinue = pindex->GetBlockHash();
+                printf("  getblocks stopping at limit %d %s\n", pindex->getHeight_unsafe(),
+                       pindex->GetBlockHash_unsafe().ToString().c_str());
+                pfrom->hashContinue = pindex->GetBlockHash_unsafe();
                 break;
             }
         }
@@ -2286,7 +2304,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         uint256       hashStop;
         vRecv >> locator >> hashStop;
 
-        CBlockIndexSmartPtr pindex = NULL;
+        CBlockIndexSmartPtr pindex = nullptr;
         if (locator.IsNull()) {
             // If locator is null, return the hashStop block
             BlockIndexMapType::iterator mi = mapBlockIndex.find(hashStop);
@@ -2297,13 +2315,15 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             // Find the last block the caller has in the main chain
             pindex = locator.GetBlockIndex();
             if (pindex)
-                pindex = boost::atomic_load(&pindex->pnext);
+                pindex = pindex->getNextBlockIndex();
         }
 
         vector<CBlock> vHeaders;
         int            nLimit = 2000;
-        printf("getheaders %d to %s\n", (pindex ? pindex->nHeight : -1), hashStop.ToString().c_str());
-        for (; pindex; pindex = pindex->pnext) {
+        printf("getheaders %d to %s\n", (pindex ? pindex->getHeight() : -1),
+               hashStop.ToString().c_str());
+        for (; pindex; pindex = pindex->getNextBlockIndex()) {
+            auto lg = pindex->lock_full();
             vHeaders.push_back(pindex->GetBlockHeader());
             if (--nLimit <= 0 || pindex->GetBlockHash() == hashStop)
                 break;
@@ -2970,8 +2990,10 @@ int64_t GetTxBlockHeight(const uint256& txHash)
         BlockIndexMapType::iterator mi = mapBlockIndex.find(hashBlock);
         if (mi != mapBlockIndex.end() && (*mi).second) {
             CBlockIndexSmartPtr pindex = boost::atomic_load(&mi->second);
-            if (pindex->IsInMainChain()) {
-                return static_cast<int64_t>(pindex->nHeight);
+
+            auto lg = pindex->lock_full();
+            if (pindex->IsInMainChain_unsafe()) {
+                return static_cast<int64_t>(pindex->getHeight_unsafe());
             } else {
                 return static_cast<int64_t>(-1);
             }
@@ -2990,13 +3012,17 @@ void ExportBootstrapBlockchain(const string& filename, std::atomic<bool>& stoppe
     try {
         progress.store(0, std::memory_order_relaxed);
 
-        std::vector<CBlockIndex*> chainBlocksIndices;
+        std::vector<CBlockIndexSmartPtr> chainBlocksIndices;
 
         {
-            CBlockIndex* pblockindex = boost::atomic_load(&mapBlockIndex[hashBestChain]).get();
+            CBlockIndexSmartPtr pblockindex = boost::atomic_load(&pindexBest);
             chainBlocksIndices.push_back(pblockindex);
-            while (pblockindex->nHeight > 0 && !stopped.load() && !fShutdown) {
-                pblockindex = boost::atomic_load(&pblockindex->pprev).get();
+            while (true) {
+                auto lg = pblockindex->lock_full();
+                if (pblockindex->getHeight_unsafe() <= 0 || stopped.load() || fShutdown) {
+                    break;
+                }
+                pblockindex = pblockindex->getPrevBlockIndex_unsafe();
                 chainBlocksIndices.push_back(pblockindex);
             }
         }
@@ -3016,14 +3042,14 @@ void ExportBootstrapBlockchain(const string& filename, std::atomic<bool>& stoppe
         CDataStream  serializedBlocks(SER_DISK, CLIENT_VERSION);
         size_t       written = 0;
         const size_t total   = chainBlocksIndices.size();
-        for (CBlockIndex* blockIndex : boost::adaptors::reverse(chainBlocksIndices)) {
+        for (CBlockIndexSmartPtr blockIndex : boost::adaptors::reverse(chainBlocksIndices)) {
             progress.store(static_cast<double>(written) / static_cast<double>(total),
                            std::memory_order_relaxed);
             if (stopped.load() || fShutdown) {
                 throw std::runtime_error("Operation was stopped.");
             }
             CBlock block;
-            block.ReadFromDisk(blockIndex, true);
+            block.ReadFromDisk(blockIndex.get(), true);
 
             // every block starts with pchMessageStart
             unsigned int nSize = block.GetSerializeSize(SER_DISK, CLIENT_VERSION);
@@ -3115,8 +3141,9 @@ GetBlockIndexAsGraph(const BlockIndexMapType& BlockIndex = mapBlockIndex)
     // add edges, which are previous blocks connected to subsequent blocks
     for (const auto& bi : tempBlockIndex) {
         if (bi.first != hashGenesisBlock && bi.first != hashGenesisBlockTestNet) {
-            boost::add_edge(verticesDescriptors.at(*bi.second->pprev->phashBlock),
-                            verticesDescriptors.at(bi.first), graph);
+            boost::add_edge(
+                verticesDescriptors.at(*bi.second->getPrevBlockIndex()->getBlockHashPtr_unsafe()),
+                verticesDescriptors.at(bi.first), graph);
         }
     }
     return std::make_pair(graph, verticesDescriptors);

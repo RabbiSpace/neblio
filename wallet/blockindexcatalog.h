@@ -12,12 +12,18 @@ class CBlockIndex;
 
 class BlockIndexCatalog
 {
-    BlockIndexMapType blockIndexMap;
+    mutable boost::recursive_mutex mtx;
 
-    CBlockIndexSmartPtr InsertBlockIndex(uint256 hash);
+    BlockIndexMapType blockIndexMap;
 
 public:
     BlockIndexCatalog();
+
+    [[nodiscard]] boost::shared_ptr<boost::lock_guard<boost::recursive_mutex>> get_lock() const;
+
+    [[nodiscard]] boost::shared_ptr<boost::unique_lock<boost::recursive_mutex>> get_try_lock() const;
+
+    CBlockIndexSmartPtr insertBlockIndex_unsafe(uint256 hash);
 };
 
 #endif // BLOCKINDEXCATALOG_H

@@ -167,9 +167,9 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, Object& entry, bo
         if (mi != mapBlockIndex.end() && (*mi).second) {
             CBlockIndexSmartPtr pindex = boost::atomic_load(&mi->second);
             if (pindex->IsInMainChain()) {
-                entry.push_back(Pair("confirmations", 1 + nBestHeight - pindex->nHeight));
-                entry.push_back(Pair("time", (int64_t)pindex->nTime));
-                entry.push_back(Pair("blocktime", (int64_t)pindex->nTime));
+                entry.push_back(Pair("confirmations", 1 + nBestHeight - pindex->getHeight()));
+                entry.push_back(Pair("time", (int64_t)pindex->getHeader_NTime()));
+                entry.push_back(Pair("blocktime", (int64_t)pindex->getHeader_NTime()));
             } else
                 entry.push_back(Pair("confirmations", 0));
         }

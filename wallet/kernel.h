@@ -4,8 +4,8 @@
 #ifndef PPCOIN_KERNEL_H
 #define PPCOIN_KERNEL_H
 
-#include <cstdint>
 #include "transaction.h"
+#include <cstdint>
 
 class CBlock;
 class CBlockIndex;
@@ -18,7 +18,7 @@ extern unsigned int nModifierInterval;
 static const int MODIFIER_INTERVAL_RATIO = 3;
 
 // Compute the hash modifier for proof-of-stake
-bool ComputeNextStakeModifier(const CBlockIndex* pindexPrev, uint64_t& nStakeModifier,
+bool ComputeNextStakeModifier(ConstCBlockIndexSmartPtr pindexPrev, uint64_t& nStakeModifier,
                               bool& fGeneratedStakeModifier);
 
 // Check whether stake kernel meets hash target

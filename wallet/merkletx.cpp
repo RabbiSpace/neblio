@@ -21,15 +21,17 @@ int CMerkleTx::GetDepthInMainChainINTERNAL(CBlockIndex*& pindexRet) const
     if (!pindex || !pindex->IsInMainChain())
         return 0;
 
+    auto lg = pindex->lock_full();
     // Make sure the merkle branch connects to this block
     if (!fMerkleVerified) {
-        if (CBlock::CheckMerkleBranch(GetHash(), vMerkleBranch, nIndex) != pindex->hashMerkleRoot)
+        if (CBlock::CheckMerkleBranch(GetHash(), vMerkleBranch, nIndex) !=
+            pindex->getHeader_HashMerkleRoot_unsafe())
             return 0;
         fMerkleVerified = true;
     }
 
     pindexRet = pindex.get();
-    return boost::atomic_load(&pindexBest)->nHeight - pindex->nHeight + 1;
+    return boost::atomic_load(&pindexBest)->getHeight_unsafe() - pindex->getHeight_unsafe() + 1;
 }
 
 int CMerkleTx::GetDepthInMainChain(CBlockIndex*& pindexRet) const
@@ -89,8 +91,9 @@ int CMerkleTx::SetMerkleBranch(const CBlock* pblock)
     if (mi == mapBlockIndex.end())
         return 0;
     CBlockIndexSmartPtr pindex = boost::atomic_load(&mi->second);
-    if (!pindex || !pindex->IsInMainChain())
+    auto                lg     = pindex->lock_full();
+    if (!pindex || !pindex->IsInMainChain_unsafe())
         return 0;
 
-    return boost::atomic_load(&pindexBest)->nHeight - pindex->nHeight + 1;
+    return boost::atomic_load(&pindexBest)->getHeight_unsafe() - pindex->getHeight_unsafe() + 1;
 }

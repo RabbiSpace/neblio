@@ -1,11 +1,11 @@
 #ifndef BLOCKLOCATOR_H
 #define BLOCKLOCATOR_H
 
-#include <vector>
-#include "uint256.h"
+#include "boost/foreach.hpp"
 #include "globals.h"
 #include "serialize.h"
-#include "boost/foreach.hpp"
+#include "uint256.h"
+#include <vector>
 
 class CBlockIndex;
 
@@ -21,7 +21,7 @@ protected:
 public:
     CBlockLocator() {}
 
-    explicit CBlockLocator(const CBlockIndex* pindex);
+    explicit CBlockLocator(ConstCBlockIndexSmartPtr pindex);
 
     explicit CBlockLocator(uint256 hashBlock);
 
@@ -33,7 +33,7 @@ public:
 
     bool IsNull();
 
-    void Set(const CBlockIndex* pindex);
+    void Set(ConstCBlockIndexSmartPtr pindex);
 
     int GetDistanceBack();
 

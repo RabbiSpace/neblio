@@ -6,16 +6,16 @@
 
 uint256 CDiskBlockIndex::GetBlockHash() const
 {
-    if (fUseFastIndex && (nTime < GetAdjustedTime() - 24 * 60 * 60) && blockHash != 0)
+    if (fUseFastIndex && (contents.nTime < GetAdjustedTime() - 24 * 60 * 60) && blockHash != 0)
         return blockHash;
 
     CBlock block;
-    block.nVersion       = nVersion;
+    block.nVersion       = contents.nVersion;
     block.hashPrevBlock  = hashPrev;
-    block.hashMerkleRoot = hashMerkleRoot;
-    block.nTime          = nTime;
-    block.nBits          = nBits;
-    block.nNonce         = nNonce;
+    block.hashMerkleRoot = contents.hashMerkleRoot;
+    block.nTime          = contents.nTime;
+    block.nBits          = contents.nBits;
+    block.nNonce         = contents.nNonce;
 
     const_cast<CDiskBlockIndex*>(this)->blockHash = block.GetHash();
 

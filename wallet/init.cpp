@@ -918,13 +918,16 @@ bool AppInit2()
         if (walletdb.ReadBestBlock(locator))
             pindexRescan = locator.GetBlockIndex();
     }
+    auto lg  = pindexRescan->lock_full();
+    auto lgb = pindexBest->lock_full();
     if (pindexBest != pindexRescan && pindexBest && pindexRescan &&
-        pindexBest->nHeight > pindexRescan->nHeight) {
+        pindexBest->getHeight_unsafe() > pindexRescan->getHeight_unsafe()) {
         uiInterface.InitMessage(_("Rescanning..."));
         printf("Rescanning last %i blocks (from block %i)...\n",
-               pindexBest->nHeight - pindexRescan->nHeight, pindexRescan->nHeight);
+               pindexBest->getHeight_unsafe() - pindexRescan->getHeight_unsafe(),
+               pindexRescan->getHeight_unsafe());
         nStart = GetTimeMillis();
-        pwalletMain->ScanForWalletTransactions(pindexRescan.get(), true);
+        pwalletMain->ScanForWalletTransactions(pindexRescan, true);
         printf(" rescan      %15" PRId64 "ms\n", GetTimeMillis() - nStart);
     }
 

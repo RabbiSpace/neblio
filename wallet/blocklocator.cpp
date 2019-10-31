@@ -3,13 +3,13 @@
 #include "blockindex.h"
 #include "protocol.h"
 
-CBlockLocator::CBlockLocator(const CBlockIndex* pindex) { Set(pindex); }
+CBlockLocator::CBlockLocator(ConstCBlockIndexSmartPtr pindex) { Set(pindex); }
 
 CBlockLocator::CBlockLocator(uint256 hashBlock)
 {
     BlockIndexMapType::iterator mi = mapBlockIndex.find(hashBlock);
     if (mi != mapBlockIndex.end())
-        Set(boost::atomic_load(&mi->second).get());
+        Set(mi->second);
 }
 
 CBlockLocator::CBlockLocator(const std::vector<uint256>& vHaveIn) { vHave = vHaveIn; }
@@ -18,7 +18,7 @@ void CBlockLocator::SetNull() { vHave.clear(); }
 
 bool CBlockLocator::IsNull() { return vHave.empty(); }
 
-void CBlockLocator::Set(const CBlockIndex* pindex)
+void CBlockLocator::Set(ConstCBlockIndexSmartPtr pindex)
 {
     vHave.clear();
     int nStep = 1;
@@ -27,7 +27,7 @@ void CBlockLocator::Set(const CBlockIndex* pindex)
 
         // Exponentially larger steps back
         for (int i = 0; pindex && i < nStep; i++)
-            pindex = boost::atomic_load(&pindex->pprev).get();
+            pindex = pindex->getPrevBlockIndex();
         if (vHave.size() > 10)
             nStep *= 2;
     }
@@ -83,8 +83,8 @@ uint256 CBlockLocator::GetBlockHash()
 
 int CBlockLocator::GetHeight()
 {
-    CBlockIndex* pindex = GetBlockIndex().get();
+    ConstCBlockIndexSmartPtr pindex = GetBlockIndex();
     if (!pindex)
         return 0;
-    return pindex->nHeight;
+    return pindex->getHeight();
 }

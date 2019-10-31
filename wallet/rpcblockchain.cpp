@@ -29,9 +29,10 @@ double GetDifficulty(const CBlockIndex* blockindex)
             blockindex = GetLastBlockIndex(pindexBest.get(), false);
     }
 
-    int nShift = (blockindex->nBits >> 24) & 0xff;
+    auto lg     = blockindex->lock_full();
+    int  nShift = (blockindex->getHeader_NBits_unsafe() >> 24) & 0xff;
 
-    double dDiff = (double)0x0000ffff / (double)(blockindex->nBits & 0x00ffffff);
+    double dDiff = (double)0x0000ffff / (double)(blockindex->getHeader_NBits_unsafe() & 0x00ffffff);
 
     while (nShift < 29) {
         dDiff *= 256.0;
@@ -47,7 +48,7 @@ double GetDifficulty(const CBlockIndex* blockindex)
 
 double GetPoWMHashPS()
 {
-    if (boost::atomic_load(&pindexBest)->nHeight >= LAST_POW_BLOCK)
+    if (boost::atomic_load(&pindexBest)->getHeight() >= LAST_POW_BLOCK)
         return 0;
 
     int     nPoWInterval          = 72;
@@ -66,7 +67,7 @@ double GetPoWMHashPS()
             pindexPrevWork     = pindex;
         }
 
-        pindex = atomic_load(&pindex->pnext);
+        pindex = pindex->getNextBlockIndex();
     }
 
     return GetDifficulty() * 4294.967296 / nTargetSpacingWork;
@@ -83,14 +84,17 @@ double GetPoSKernelPS()
     CBlockIndexSmartPtr pindexPrevStake = nullptr;
 
     while (pindex && nStakesHandled < nPoSInterval) {
+        auto lg = pindex->lock_full();
         if (pindex->IsProofOfStake()) {
             dStakeKernelsTriedAvg += GetDifficulty(pindex.get()) * 4294967296.0;
-            nStakesTime += pindexPrevStake ? (pindexPrevStake->nTime - pindex->nTime) : 0;
+            nStakesTime += pindexPrevStake
+                               ? (pindexPrevStake->getHeader_NTime_unsafe() - pindex->getHeader_NTime())
+                               : 0;
             pindexPrevStake = pindex;
             nStakesHandled++;
         }
 
-        pindex = pindex->pprev;
+        pindex = pindex->getPrevBlockIndex_unsafe();
     }
 
     return nStakesTime ? dStakeKernelsTriedAvg / nStakesTime : 0;
@@ -105,28 +109,31 @@ Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool fPri
     txGen.SetMerkleBranch(&block);
     result.push_back(Pair("confirmations", (int)txGen.GetDepthInMainChain()));
     result.push_back(Pair("size", (int)::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION)));
-    result.push_back(Pair("height", blockindex->nHeight));
+    result.push_back(Pair("height", blockindex->getHeight()));
     result.push_back(Pair("version", block.nVersion));
     result.push_back(Pair("merkleroot", block.hashMerkleRoot.GetHex()));
-    result.push_back(Pair("mint", ValueFromAmount(blockindex->nMint)));
+    result.push_back(Pair("mint", ValueFromAmount(blockindex->getMintCount())));
     result.push_back(Pair("time", (int64_t)block.GetBlockTime()));
     result.push_back(Pair("nonce", (uint64_t)block.nNonce));
     result.push_back(Pair("bits", strprintf("%08x", block.nBits)));
     result.push_back(Pair("difficulty", GetDifficulty(blockindex)));
     result.push_back(Pair("blocktrust", leftTrim(blockindex->GetBlockTrust().GetHex(), '0')));
-    result.push_back(Pair("chaintrust", leftTrim(blockindex->nChainTrust.GetHex(), '0')));
-    if (blockindex->pprev)
-        result.push_back(Pair("previousblockhash", blockindex->pprev->GetBlockHash().GetHex()));
-    if (blockindex->pnext)
-        result.push_back(Pair("nextblockhash", blockindex->pnext->GetBlockHash().GetHex()));
+    result.push_back(Pair("chaintrust", leftTrim(blockindex->getChainTrust().GetHex(), '0')));
+    if (blockindex->getPrevBlockIndex())
+        result.push_back(
+            Pair("previousblockhash", blockindex->getPrevBlockIndex()->GetBlockHash().GetHex()));
+    if (blockindex->getNextBlockIndex())
+        result.push_back(
+            Pair("nextblockhash", blockindex->getNextBlockIndex()->GetBlockHash().GetHex()));
 
     result.push_back(Pair(
         "flags", strprintf("%s%s", blockindex->IsProofOfStake() ? "proof-of-stake" : "proof-of-work",
                            blockindex->GeneratedStakeModifier() ? " stake-modifier" : "")));
-    result.push_back(Pair("proofhash", blockindex->hashProof.GetHex()));
+    result.push_back(Pair("proofhash", blockindex->getHashProof().GetHex()));
     result.push_back(Pair("entropybit", (int)blockindex->GetStakeEntropyBit()));
-    result.push_back(Pair("modifier", strprintf("%016" PRIx64, blockindex->nStakeModifier)));
-    result.push_back(Pair("modifierchecksum", strprintf("%08x", blockindex->nStakeModifierChecksum)));
+    result.push_back(Pair("modifier", strprintf("%016" PRIx64, blockindex->getStakeModifier())));
+    result.push_back(
+        Pair("modifierchecksum", strprintf("%08x", blockindex->getStakeModifierChecksum())));
 
     Array txinfo;
     BOOST_FOREACH (const CTransaction& tx, block.vtx) {
@@ -218,7 +225,7 @@ Value getblockhash(const Array& params, bool fHelp)
         throw runtime_error("Block number out of range.");
 
     CBlockIndexSmartPtr pblockindex = CBlock::FindBlockByHeight(nHeight);
-    return pblockindex->phashBlock->GetHex();
+    return pblockindex->getBlockHashPtr()->GetHex();
 }
 
 // Experimentally deprecated in an effort to support the getblock() call electrum requires
@@ -302,10 +309,10 @@ Value getblockbynumber(const Array& params, bool fHelp)
 
     CBlock              block;
     CBlockIndexSmartPtr pblockindex = boost::atomic_load(&mapBlockIndex[hashBestChain]);
-    while (pblockindex->nHeight > nHeight)
-        pblockindex = pblockindex->pprev;
+    while (pblockindex->getHeight() > nHeight)
+        pblockindex = pblockindex->getPrevBlockIndex();
 
-    uint256 hash = *pblockindex->phashBlock;
+    uint256 hash = *pblockindex->getBlockHashPtr();
 
     pblockindex = boost::atomic_load(&mapBlockIndex[hash]);
     block.ReadFromDisk(pblockindex.get(), true);
@@ -330,7 +337,7 @@ Value getcheckpoint(const Array& params, bool fHelp)
 
     result.push_back(Pair("synccheckpoint", Checkpoints::hashSyncCheckpoint.ToString().c_str()));
     pindexCheckpoint = boost::atomic_load(&mapBlockIndex[Checkpoints::hashSyncCheckpoint]).get();
-    result.push_back(Pair("height", pindexCheckpoint->nHeight));
+    result.push_back(Pair("height", pindexCheckpoint->getHeight()));
     result.push_back(Pair("timestamp", DateTimeStrFormat(pindexCheckpoint->GetBlockTime()).c_str()));
 
     // Check that the block satisfies synchronized checkpoint
