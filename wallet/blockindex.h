@@ -4,6 +4,8 @@
 #include "globals.h"
 #include "outpoint.h"
 #include "uint256.h"
+#include <boost/shared_ptr.hpp>
+#include <boost/smart_ptr/enable_shared_from_this.hpp>
 
 class CBlock;
 
