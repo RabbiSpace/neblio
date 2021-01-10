@@ -7,7 +7,7 @@
 #include <QIcon>
 #include <QImage>
 
-std::atomic<NTP1TokenListModel*> ntp1TokenListModelInstance{nullptr};
+boost::atomic<NTP1TokenListModel*> ntp1TokenListModelInstance{nullptr};
 
 QString NTP1TokenListModel::__getTokenName(int index, boost::shared_ptr<NTP1Wallet> theWallet)
 {

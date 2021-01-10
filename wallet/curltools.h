@@ -1,7 +1,7 @@
 #ifndef CURLTOOLS_H
 #define CURLTOOLS_H
 
-#include <atomic>
+#include <boost/atomic.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/optional.hpp>
 #include <curl/curl.h>
@@ -27,7 +27,7 @@ public:
                                        const std::string& data, bool chunked);
     static void        GetLargeFileFromHTTPS(const std::string& URL, long ConnectionTimeout,
                                              const boost::filesystem::path& targetPath,
-                                             std::atomic<float>&            progress,
+                                             boost::atomic<float>&          progress,
                                              const std::set<CURLcode>& errorsToIgnore = std::set<CURLcode>());
     static int         CurlAtomicProgress_CallbackFunc(void* number, double TotalToDownload,
                                                        double NowDownloaded, double, double);

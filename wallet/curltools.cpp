@@ -69,15 +69,15 @@ int cURLTools::CurlAtomicProgress_CallbackFunc(void* number, double TotalToDownl
                                                double NowDownloaded, double /*TotalToUpload*/,
                                                double /*NowUploaded*/)
 {
-    std::atomic<float>* progress = reinterpret_cast<std::atomic<float>*>(number);
-    float               val      = 0;
+    boost::atomic<float>* progress = reinterpret_cast<boost::atomic<float>*>(number);
+    float                 val      = 0;
     if (NowDownloaded > 0.) {
         val = static_cast<float>(NowDownloaded / 1000 / 1000); // bytes to MB
         if (val < 0.0001) {
             val = 0;
         }
     }
-    progress->store(val, std::memory_order_relaxed);
+    progress->store(val, boost::memory_order_relaxed);
     return CURLE_OK;
 }
 
@@ -115,7 +115,7 @@ std::string cURLTools::GetFileFromHTTPS_withRetries(const boost::optional<uint64
 
 void cURLTools::GetLargeFileFromHTTPS(const std::string& URL, long ConnectionTimeout,
                                       const boost::filesystem::path& targetPath,
-                                      std::atomic<float>&            progress,
+                                      boost::atomic<float>&          progress,
                                       const std::set<CURLcode>&      errorsToIgnore)
 {
 

@@ -64,7 +64,7 @@
 #include <iostream>
 #include <memory>
 
-extern std::shared_ptr<CWallet> pwalletMain;
+extern boost::shared_ptr<CWallet> pwalletMain;
 
 double GetPoSKernelPS();
 
@@ -921,8 +921,8 @@ void BitcoinGUI::exportBlockchainBootstrap()
 
         boost::promise<void>       finished;
         boost::unique_future<void> finished_future = finished.get_future();
-        std::atomic<bool>          stopped{false};
-        std::atomic<double>        progress{false};
+        boost::atomic<bool>        stopped{false};
+        boost::atomic<double>      progress{false};
 
         if (includeOrphanResult == QMessageBox::Yes) {
             // with orphans
@@ -1256,7 +1256,7 @@ void BitcoinGUI::updateStakingIcon()
 
     if (stakeMaker.IsStakingActive()) {
         uint64_t       nNetworkWeight = GetPoSKernelPS();
-        unsigned int nTS              = Params().TargetSpacing(CTxDB());
+        unsigned int   nTS            = Params().TargetSpacing(CTxDB());
         const uint64_t nWeight        = stakeMaker.getLatestStakeWeight().value_or(0);
         unsigned       nEstimateTime  = !!nWeight ? (nTS * nNetworkWeight / nWeight) : -1;
 

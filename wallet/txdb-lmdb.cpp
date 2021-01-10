@@ -38,8 +38,8 @@ using namespace boost;
 boost::filesystem::path CTxDB::DB_DIR                         = "txlmdb";
 bool                    CTxDB::QuickSyncHigherControl_Enabled = true;
 
-std::atomic<uint64_t> mdb_txn_safe::num_active_txns{0};
-std::atomic_flag      mdb_txn_safe::creation_gate = ATOMIC_FLAG_INIT;
+boost::atomic<uint64_t> mdb_txn_safe::num_active_txns{0};
+boost::atomic_flag      mdb_txn_safe::creation_gate = BOOST_ATOMIC_FLAG_INIT;
 
 // threshold_size is used for batch transactions
 bool CTxDB::need_resize(uint64_t threshold_size)
@@ -257,7 +257,7 @@ void DownloadQuickSyncFile(const json_spirit::Value& fileVal, const filesystem::
         }
     }
 
-    std::atomic<float> progress;
+    boost::atomic<float> progress;
     progress.store(0);
 
     // ensure that all leaf file names are the same in the retrieved json data, this shows if the
@@ -301,7 +301,7 @@ void DownloadQuickSyncFile(const json_spirit::Value& fileVal, const filesystem::
         std::stringstream ss;
         ss.setf(std::ios::fixed);
         ss << "Downloading QuickSync file " << leaf << ": " << std::setprecision(2)
-           << progress.load(std::memory_order_relaxed) << " MB...";
+           << progress.load(boost::memory_order_relaxed) << " MB...";
         uiInterface.InitMessage(ss.str());
     } while (downloadThreadFuture.wait_for(std::chrono::milliseconds(250)) != std::future_status::ready);
     downloadThread.join();
@@ -882,7 +882,8 @@ bool CTxDB::WriteBestInvalidTrust(const CBigNum& bnBestInvalidTrust)
     return Write(string("bnBestInvalidTrust"), bnBestInvalidTrust, db_main);
 }
 
-static CBlockIndexSmartPtr InsertBlockIndex(const uint256& hash, BlockIndexMapType::MapType& blockIndexMap)
+static CBlockIndexSmartPtr InsertBlockIndex(const uint256&              hash,
+                                            BlockIndexMapType::MapType& blockIndexMap)
 {
     if (hash == 0)
         return nullptr;
@@ -1074,11 +1075,11 @@ bool CTxDB::LoadBlockIndex()
 
     const int bestHeight = loadedBlockIndex.at(hashBestChainTemp)->nHeight;
 
-    printf(
-        "LoadBlockIndex(): hashBestChain=%s  height=%d  trust=%s  date=%s\n",
-        hashBestChainTemp.ToString().substr(0, 20).c_str(), bestHeight,
-        CBigNum(GetBestChainTrust().value_or(0)).ToString().c_str(),
-        DateTimeStrFormat("%x %H:%M:%S", loadedBlockIndex.at(hashBestChainTemp)->GetBlockTime()).c_str());
+    printf("LoadBlockIndex(): hashBestChain=%s  height=%d  trust=%s  date=%s\n",
+           hashBestChainTemp.ToString().substr(0, 20).c_str(), bestHeight,
+           CBigNum(GetBestChainTrust().value_or(0)).ToString().c_str(),
+           DateTimeStrFormat("%x %H:%M:%S", loadedBlockIndex.at(hashBestChainTemp)->GetBlockTime())
+               .c_str());
 
     // Load bnBestInvalidTrust, OK if it doesn't exist
     CBigNum bnBestInvalidTrust;
@@ -1097,8 +1098,8 @@ bool CTxDB::LoadBlockIndex()
     CBlockIndexSmartPtr              pindexFork = nullptr;
     map<uint256, const CBlockIndex*> mapBlockPos;
     loadedCount = 0;
-    for (ConstCBlockIndexSmartPtr pindex = loadedBlockIndex.at(hashBestChainTemp); pindex && pindex->pprev;
-         pindex                          = pindex->pprev) {
+    for (ConstCBlockIndexSmartPtr pindex = loadedBlockIndex.at(hashBestChainTemp);
+         pindex && pindex->pprev; pindex = pindex->pprev) {
 
         if (loadedCount % 100 == 0) {
             uiInterface.InitMessage("Verifying latest blocks (" + std::to_string(loadedCount) + "/" +

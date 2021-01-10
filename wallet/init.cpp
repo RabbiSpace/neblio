@@ -30,15 +30,15 @@
 using namespace std;
 using namespace boost;
 
-std::shared_ptr<CWallet> pwalletMain;
-CClientUIInterface       uiInterface;
-bool                     fConfChange;
-bool                     fEnforceCanonical;
-unsigned int             nNodeLifespan;
-unsigned int             nDerivationMethodIndex;
-unsigned int             nMinerSleep;
-enum Checkpoints::CPMode CheckpointsMode;
-boost::atomic<bool>      appInitiated{false};
+boost::shared_ptr<CWallet> pwalletMain;
+CClientUIInterface         uiInterface;
+bool                       fConfChange;
+bool                       fEnforceCanonical;
+unsigned int               nNodeLifespan;
+unsigned int               nDerivationMethodIndex;
+unsigned int               nMinerSleep;
+enum Checkpoints::CPMode   CheckpointsMode;
+boost::atomic<bool>        appInitiated{false};
 
 LockedVar<boost::signals2::signal<void()>> StopRPCRequests;
 
@@ -73,7 +73,7 @@ void FlushDBWalletTransient(bool shutdown) { bitdb.Flush(shutdown); }
 
 DBErrors LoadDBWalletTransient(bool& fFirstRun)
 {
-    return std::atomic_load(&pwalletMain)->LoadWallet(fFirstRun);
+    return boost::atomic_load(&pwalletMain)->LoadWallet(fFirstRun);
 }
 
 //////////////////////////////////////////////////////////
@@ -121,7 +121,7 @@ void Shutdown(void* /*parg*/)
         FlushDBWalletTransient(true);
         boost::filesystem::remove(GetPidFile());
         UnregisterWallet(pwalletMain);
-        std::weak_ptr<CWallet> weakWallet = pwalletMain;
+        boost::weak_ptr<CWallet> weakWallet = pwalletMain;
         pwalletMain.reset();
         while (weakWallet.lock()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -835,9 +835,9 @@ bool AppInit2()
 
     const boost::optional<std::string> printBlock = mapArgs.get("-printblock");
     if (printBlock) {
-        const string strMatch = *printBlock;
-        int          nFound   = 0;
-        const auto blockIndexMap = mapBlockIndex.getInternalMap();
+        const string strMatch      = *printBlock;
+        int          nFound        = 0;
+        const auto   blockIndexMap = mapBlockIndex.getInternalMap();
         for (auto mi = blockIndexMap.cbegin(); mi != blockIndexMap.cend(); ++mi) {
             uint256 hash = (*mi).first;
             if (strncmp(hash.ToString().c_str(), strMatch.c_str(), strMatch.size()) == 0) {
@@ -869,8 +869,8 @@ bool AppInit2()
     nStart         = GetTimeMillis();
     bool fFirstRun = true;
     {
-        std::shared_ptr<CWallet> wlt = std::make_shared<CWallet>(strWalletFileName);
-        std::atomic_store(&pwalletMain, wlt);
+        boost::shared_ptr<CWallet> wlt = boost::make_shared<CWallet>(strWalletFileName);
+        boost::atomic_store(&pwalletMain, wlt);
     }
     DBErrors nLoadWalletRet = LoadDBWalletTransient(fFirstRun);
     if (nLoadWalletRet != DB_LOAD_OK) {

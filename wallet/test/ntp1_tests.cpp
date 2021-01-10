@@ -2037,7 +2037,7 @@ void DownloadAndCreateTxData(NetworkType netType)
     std::vector<std::pair<std::string, std::string>> rawNeblioTxsVec(txids.size());
     std::vector<std::pair<std::string, std::string>> ntp1TxsVec(txids.size());
 
-    std::atomic_int count{0};
+    boost::atomic_int count{0};
 
     static const unsigned thread_count = std::thread::hardware_concurrency();
 
@@ -2082,9 +2082,9 @@ void DownloadAndCreateTxData(NetworkType netType)
                     rawNeblioTxsVec[j] = std::make_pair(txids[j], rawTx);
                     ntp1TxsVec[j]      = std::make_pair(txids[j], boost::algorithm::hex(ntp1tx_ref));
 
-                    count.fetch_add(1, std::memory_order_relaxed);
-                    if (count.load(std::memory_order_relaxed) % 100 == 0) {
-                        std::cout << "Downloading tx: " << count.load(std::memory_order_relaxed)
+                    count.fetch_add(1, boost::memory_order_relaxed);
+                    if (count.load(boost::memory_order_relaxed) % 100 == 0) {
+                        std::cout << "Downloading tx: " << count.load(boost::memory_order_relaxed)
                                   << std::endl;
                     }
                 }

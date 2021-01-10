@@ -143,7 +143,7 @@ Value getworkex(const Array& params, bool fHelp)
     typedef map<uint256, pair<CBlock*, CScript>> mapNewBlock_t;
     static mapNewBlock_t                         mapNewBlock;
     static vector<CBlock*>                       vNewBlock;
-    static CReserveKey                           reservekey(std::atomic_load(&pwalletMain).get());
+    static CReserveKey                           reservekey(boost::atomic_load(&pwalletMain).get());
 
     if (params.size() == 0) {
         // Update block

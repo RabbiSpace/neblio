@@ -314,7 +314,7 @@ TEST(quicksync_tests, download_index_file)
                     }
                     {
                         // test by downloading to a file and calculating the hash
-                        std::atomic<float>      progress;
+                        boost::atomic<float>      progress;
                         boost::filesystem::path testFilePath = "test_lock.mdb";
                         cURLTools::GetLargeFileFromHTTPS(url, 30, testFilePath, progress);
                         std::string sha256_result = CalculateHashOfFile<Sha256Calculator>(testFilePath);
@@ -329,9 +329,9 @@ TEST(quicksync_tests, download_index_file)
                 //                "sha256sum"); std::string sumBin = boost::algorithm::unhex(sum);
                 //                {
                 //                    // test by downloading to a file and calculating the hash
-                //                    std::atomic<float>      progress;
+                //                    boost::atomic<float>      progress;
                 //                    boost::filesystem::path testFilePath = "test_data.mdb";
-                //                    std::atomic_bool        finishedDownload;
+                //                    boost::atomic_bool        finishedDownload;
                 //                    finishedDownload.store(false);
                 //                    boost::thread downloadThread([&]() {
                 //                        cURLTools::GetLargeFileFromHTTPS(url, 30, testFilePath,

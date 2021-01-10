@@ -10,7 +10,7 @@
 #include "txdb.h"
 #include "txmempool.h"
 #include <algorithm>
-#include <atomic>
+#include <boost/atomic.hpp>
 #include <chrono>
 #include <thread>
 
@@ -334,7 +334,7 @@ Value getblockbynumber(const Array& params, bool fHelp)
     const uint256 hash = pblockindex->phashBlock;
 
     pblockindex = mapBlockIndex.get(hash).value_or(nullptr);
-    if(!pblockindex) {
+    if (!pblockindex) {
         throw runtime_error("Failed to get block after finding its hash.");
     }
     block.ReadFromDisk(pblockindex.get(), true);
@@ -380,8 +380,8 @@ Value exportblockchain(const Array& params, bool fHelp)
 
     boost::promise<void>       finished;
     boost::unique_future<void> finished_future = finished.get_future();
-    std::atomic<bool>          stopped{false};
-    std::atomic<double>        progress{false};
+    boost::atomic<bool>        stopped{false};
+    boost::atomic<double>      progress{false};
 
     if (graphTraverseType) {
         // with orphans

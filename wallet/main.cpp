@@ -41,8 +41,8 @@ using namespace boost;
 
 std::set<uint256> UnrecoverableNTP1Txs;
 
-CCriticalSection              cs_setpwalletRegistered;
-set<std::shared_ptr<CWallet>> setpwalletRegistered;
+CCriticalSection                cs_setpwalletRegistered;
+set<boost::shared_ptr<CWallet>> setpwalletRegistered;
 
 CCriticalSection cs_main;
 
@@ -77,7 +77,7 @@ CAmount nMinimumInputValue = 0;
 
 // These functions dispatch to one or all registered wallets
 
-void RegisterWallet(std::shared_ptr<CWallet> pwalletIn)
+void RegisterWallet(boost::shared_ptr<CWallet> pwalletIn)
 {
     {
         LOCK(cs_setpwalletRegistered);
@@ -85,7 +85,7 @@ void RegisterWallet(std::shared_ptr<CWallet> pwalletIn)
     }
 }
 
-void UnregisterWallet(std::shared_ptr<CWallet> pwalletIn)
+void UnregisterWallet(boost::shared_ptr<CWallet> pwalletIn)
 {
     {
         LOCK(cs_setpwalletRegistered);
@@ -96,7 +96,7 @@ void UnregisterWallet(std::shared_ptr<CWallet> pwalletIn)
 // check whether the passed transaction is from us
 bool static IsFromMe(const CTransaction& tx)
 {
-    for (const std::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
+    for (const boost::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
         if (pwallet->IsFromMe(tx))
             return true;
     return false;
@@ -105,7 +105,7 @@ bool static IsFromMe(const CTransaction& tx)
 // get the wallet transaction with the given hash (if it exists)
 bool static GetTransaction(const uint256& hashTx, CWalletTx& wtx)
 {
-    for (const std::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
+    for (const boost::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
         if (pwallet->GetTransaction(hashTx, wtx))
             return true;
     return false;
@@ -114,7 +114,7 @@ bool static GetTransaction(const uint256& hashTx, CWalletTx& wtx)
 // erases transaction with the given hash from all wallets
 void static EraseFromWallets(uint256 hash)
 {
-    for (const std::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
+    for (const boost::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
         pwallet->EraseFromWallet(hash);
 }
 
@@ -126,42 +126,42 @@ void SyncWithWallets(const ITxDB& txdb, const CTransaction& tx, const CBlock* pb
         pwalletMain->walletNewTxUpdateFunctor->run(tx.GetHash(), txdb.GetBestChainHeight().value_or(0));
     }
 
-    for (const std::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
+    for (const boost::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
         pwallet->SyncTransaction(tx, pblock);
 }
 
 // notify wallets about a new best chain
 void SetBestChain(const CBlockLocator& loc)
 {
-    for (const std::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
+    for (const boost::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
         pwallet->SetBestChain(loc);
 }
 
 // notify wallets about an updated transaction
 void UpdatedTransaction(const uint256& hashTx)
 {
-    for (const std::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
+    for (const boost::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
         pwallet->UpdatedTransaction(hashTx);
 }
 
 // dump all wallets
 void static PrintWallets(const CBlock& block)
 {
-    for (const std::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
+    for (const boost::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
         pwallet->PrintWallet(block);
 }
 
 // notify wallets about an incoming inventory (for request counts)
 void static Inventory(const uint256& hash)
 {
-    for (const std::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
+    for (const boost::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
         pwallet->Inventory(hash);
 }
 
 // ask wallets to resend their transactions
 void ResendWalletTransactions(bool fForce)
 {
-    for (const std::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
+    for (const boost::shared_ptr<CWallet>& pwallet : setpwalletRegistered)
         pwallet->ResendWalletTransactions(fForce);
 }
 
@@ -1095,8 +1095,7 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
     // Check for duplicate
     uint256 hash = pblock->GetHash();
     if (auto v = mapBlockIndex.get(hash).value_or(nullptr))
-        return error("ProcessBlock() : already have block %d %s", v->nHeight,
-                     hash.ToString().c_str());
+        return error("ProcessBlock() : already have block %d %s", v->nHeight, hash.ToString().c_str());
     if (mapOrphanBlocks.count(hash))
         return error("ProcessBlock() : already have block (orphan) %s", hash.ToString().c_str());
 
@@ -1414,8 +1413,7 @@ void PrintBlockTree()
     // pre-compute tree structure
     map<CBlockIndex*, vector<CBlockIndexSmartPtr>> mapNext;
     for (BlockIndexMapType::MapType::const_iterator mi = blockIndexMap.cbegin();
-         mi != blockIndexMap.cend();
-         ++mi) {
+         mi != blockIndexMap.cend(); ++mi) {
         CBlockIndexSmartPtr pindex = boost::atomic_load(&mi->second);
         mapNext[boost::atomic_load(&pindex->pprev).get()].push_back(pindex);
         // test
@@ -1903,7 +1901,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                     // In case we are on a very long side-chain, it is possible that we already have
                     // the last block in an inv bundle sent in response to getblocks. Try to detect
                     // this situation and push another getblocks to continue.
-                    pfrom->PushGetBlocks(mapBlockIndex.get_unsafe(inv.hash).value_or(nullptr).get(), uint256(0));
+                    pfrom->PushGetBlocks(mapBlockIndex.get_unsafe(inv.hash).value_or(nullptr).get(),
+                                         uint256(0));
                     if (fDebug)
                         printf("force request: %s\n", inv.ToString().c_str());
                 }
@@ -2518,8 +2517,8 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
         int64_t      nNow = GetTime() * 1000000;
         CTxDB        txdb("r");
         while (!pto->mapAskFor.empty() && (*pto->mapAskFor.begin()).first <= nNow) {
-            const CInv& inv = (*pto->mapAskFor.begin()).second;
-            auto lock = mapBlockIndex.get_shared_lock();
+            const CInv& inv  = (*pto->mapAskFor.begin()).second;
+            auto        lock = mapBlockIndex.get_shared_lock();
             if (!AlreadyHave(txdb, inv, mapBlockIndex)) {
                 if (fDebugNet)
                     printf("sending getdata: %s\n", inv.ToString().c_str());
@@ -2639,12 +2638,12 @@ bool IsTxInMainChain(const ITxDB& txdb, const uint256& txHash)
     throw std::runtime_error("Unable to retrieve the transaction " + txHash.ToString());
 }
 
-void ExportBootstrapBlockchain(const filesystem::path& filename, std::atomic<bool>& stopped,
-                               std::atomic<double>& progress, boost::promise<void>& result)
+void ExportBootstrapBlockchain(const filesystem::path& filename, boost::atomic<bool>& stopped,
+                               boost::atomic<double>& progress, boost::promise<void>& result)
 {
     RenameThread("Export-blockchain");
     try {
-        progress.store(0, std::memory_order_relaxed);
+        progress.store(0, boost::memory_order_relaxed);
 
         std::vector<CBlockIndex*> chainBlocksIndices;
 
@@ -2674,7 +2673,7 @@ void ExportBootstrapBlockchain(const filesystem::path& filename, std::atomic<boo
         const size_t total   = chainBlocksIndices.size();
         for (CBlockIndex* blockIndex : boost::adaptors::reverse(chainBlocksIndices)) {
             progress.store(static_cast<double>(written) / static_cast<double>(total),
-                           std::memory_order_relaxed);
+                           boost::memory_order_relaxed);
             if (stopped.load() || fShutdown) {
                 throw std::runtime_error("Operation was stopped.");
             }
@@ -2699,7 +2698,7 @@ void ExportBootstrapBlockchain(const filesystem::path& filename, std::atomic<boo
                                          "have sufficient permissions and diskspace.");
             }
         }
-        progress.store(1, std::memory_order_seq_cst);
+        progress.store(1, boost::memory_order_seq_cst);
         result.set_value();
     } catch (std::exception& ex) {
         result.set_exception(boost::current_exception());
@@ -2798,13 +2797,13 @@ std::deque<uint256> TraverseBlockIndexGraph(const BlockIndexGraphType&        gr
     }
 }
 
-void ExportBootstrapBlockchainWithOrphans(const filesystem::path& filename, std::atomic<bool>& stopped,
-                                          std::atomic<double>& progress, boost::promise<void>& result,
+void ExportBootstrapBlockchainWithOrphans(const filesystem::path& filename, boost::atomic<bool>& stopped,
+                                          boost::atomic<double>& progress, boost::promise<void>& result,
                                           GraphTraverseType traverseType)
 {
     RenameThread("Export-blockchain");
     try {
-        progress.store(0, std::memory_order_relaxed);
+        progress.store(0, boost::memory_order_relaxed);
 
         BlockIndexGraphType        graph;
         VerticesDescriptorsMapType verticesDescriptors;
@@ -2831,7 +2830,7 @@ void ExportBootstrapBlockchainWithOrphans(const filesystem::path& filename, std:
 
         for (const uint256& h : blocksHashes) {
             progress.store(static_cast<double>(written) / static_cast<double>(total),
-                           std::memory_order_relaxed);
+                           boost::memory_order_relaxed);
             if (stopped.load() || fShutdown) {
                 throw std::runtime_error("Operation was stopped.");
             }
@@ -2856,7 +2855,7 @@ void ExportBootstrapBlockchainWithOrphans(const filesystem::path& filename, std:
                                          "have sufficient permissions and diskspace.");
             }
         }
-        progress.store(1, std::memory_order_seq_cst);
+        progress.store(1, boost::memory_order_seq_cst);
         result.set_value();
     } catch (std::exception& ex) {
         result.set_exception(boost::current_exception());

@@ -5,7 +5,7 @@
 #include <QSharedPointer>
 #include <QThread>
 #include <QTimer>
-#include <atomic>
+#include <boost/atomic.hpp>
 
 #include "init.h"
 #include "wallet.h"

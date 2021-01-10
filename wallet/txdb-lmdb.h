@@ -8,7 +8,7 @@
 
 //#define DEEP_LMDB_LOGGING
 
-#include <atomic>
+#include <boost/atomic.hpp>
 #include <boost/filesystem.hpp>
 #include <map>
 #include <memory>
@@ -184,13 +184,13 @@ struct mdb_txn_safe
     static void wait_no_active_txns();
     static void allow_new_txns();
 
-    MDB_txn*                     m_txn;
-    bool                         m_batch_txn = false;
-    bool                         m_check;
-    static std::atomic<uint64_t> num_active_txns;
+    MDB_txn*                       m_txn;
+    bool                           m_batch_txn = false;
+    bool                           m_check;
+    static boost::atomic<uint64_t> num_active_txns;
 
     // could use a mutex here, but this should be sufficient.
-    static std::atomic_flag creation_gate;
+    static boost::atomic_flag creation_gate;
 };
 
 // Class that provides access to a LevelDB. Note that this class is frequently

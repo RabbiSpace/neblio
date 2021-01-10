@@ -19,7 +19,7 @@
 #include "transaction.h"
 #include "zerocoin/Zerocoin.h"
 
-#include <atomic>
+#include <boost/atomic.hpp>
 #include <boost/enable_shared_from_this.hpp>
 #include <boost/make_shared.hpp>
 #include <boost/shared_ptr.hpp>
@@ -76,7 +76,7 @@ extern StakeMaker                                   stakeMaker;
 extern const std::string                            strMessageMagic;
 extern boost::atomic_int64_t                        nTimeBestReceived;
 extern CCriticalSection                             cs_setpwalletRegistered;
-extern std::set<std::shared_ptr<CWallet>>           setpwalletRegistered;
+extern std::set<boost::shared_ptr<CWallet>>         setpwalletRegistered;
 extern std::unordered_map<uint256, CBlock*>         mapOrphanBlocks;
 extern boost::atomic<bool>                          fImporting;
 
@@ -97,8 +97,8 @@ class CReserveKey;
 class CTxDB;
 class CTxIndex;
 
-void         RegisterWallet(std::shared_ptr<CWallet> pwalletIn);
-void         UnregisterWallet(std::shared_ptr<CWallet> pwalletIn);
+void         RegisterWallet(boost::shared_ptr<CWallet> pwalletIn);
+void         UnregisterWallet(boost::shared_ptr<CWallet> pwalletIn);
 void         SyncWithWallets(const ITxDB& txdb, const CTransaction& tx, const CBlock* pblock = NULL);
 bool         ProcessBlock(CNode* pfrom, CBlock* pblock);
 bool         CheckDiskSpace(uintmax_t nAdditionalBytes = 0);
@@ -745,10 +745,10 @@ public:
     IMPLEMENT_SERIALIZE(READWRITE(header); READWRITE(txn);)
 };
 
-void ExportBootstrapBlockchain(const boost::filesystem::path& filename, std::atomic<bool>& stopped,
-                               std::atomic<double>& progress, boost::promise<void>& result);
+void ExportBootstrapBlockchain(const boost::filesystem::path& filename, boost::atomic<bool>& stopped,
+                               boost::atomic<double>& progress, boost::promise<void>& result);
 void ExportBootstrapBlockchainWithOrphans(const boost::filesystem::path& filename,
-                                          std::atomic<bool>& stopped, std::atomic<double>& progress,
+                                          boost::atomic<bool>& stopped, boost::atomic<double>& progress,
                                           boost::promise<void>& result, GraphTraverseType traverseType);
 
 #endif

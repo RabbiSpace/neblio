@@ -3,7 +3,7 @@
 
 #include <QAbstractTableModel>
 #include <QTimer>
-#include <atomic>
+#include <boost/atomic.hpp>
 
 #include "init.h"
 #include "ntp1/ntp1wallet.h"
@@ -61,10 +61,10 @@ class NTP1TokenListModel : public QAbstractTableModel
     boost::shared_ptr<NTP1WalletTxUpdater> ntp1WalletTxUpdater;
     void                                   SetupNTP1WalletTxUpdaterToWallet()
     {
-        while (!std::atomic_load(&pwalletMain).get()) {
+        while (!boost::atomic_load(&pwalletMain).get()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-        std::atomic_load(&pwalletMain)->setFunctorOnTxInsert(ntp1WalletTxUpdater);
+        boost::atomic_load(&pwalletMain)->setFunctorOnTxInsert(ntp1WalletTxUpdater);
     }
 
 public:
@@ -108,6 +108,6 @@ private slots:
     void endWalletUpdate();
 };
 
-extern std::atomic<NTP1TokenListModel*> ntp1TokenListModelInstance;
+extern boost::atomic<NTP1TokenListModel*> ntp1TokenListModelInstance;
 
 #endif // NTP1TOKENLISTMODEL_H
